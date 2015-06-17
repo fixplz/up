@@ -1,0 +1,22 @@
+[
+{
+    "name": "rwfb-viz",
+    "run": {
+        "mode": "up",
+        "cwd": "viz/",
+        "file": "viz/head.js",
+        "args": []
+    }
+},
+
+{
+    "name": "rwfb-viz-worker",
+    "run": {
+        "mode": "up",
+        "cwd": "viz/",
+        "file": "viz/draw.js",
+        "args": []
+    }
+}
+
+]
