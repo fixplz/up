@@ -1,3 +1,5 @@
+require('babel/register')
+
 var RPC = require('./lib/up-rpc')
 
 

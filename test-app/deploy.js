@@ -1,10 +1,10 @@
 var Path = require('path')
-var Up = require('../lib/up-control')
+var Up = require('..')
 
 
 var unitId = __dirname
 
-Up.getController().then(function (ctr) {
+Up.control.getController().then(function (ctr) {
     return ctr.setUnit(unitId, {
         /*"rwfb-viz": {
             cwd: "viz/",

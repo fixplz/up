@@ -1,23 +1,16 @@
-var FS = require('fs')
-var CP = require('child_process')
-var Path = require('path')
-var _ = require('lodash')
-var RPC = require('./lib/up-rpc')
-var Q = require('q')
-var K = require('kefir')
+import FS from 'fs'
+import CP from 'child_process'
+import Path from 'path'
+import _ from 'lodash'
+import Q from 'q'
+import K from 'kefir'
+
+import * as RPC from './lib/up-rpc'
+import * as Wait from './lib/wait'
 
 
-if(module == require.main) {
-    startDaemon().done()
-}
-else {
-    exports.startDaemon = startDaemon
-}
-
-function startDaemon () {
-    return RPC.host({log: true}).then(function (hub) {
-        return new RunnerRPC(hub)
-    })
+export function startDaemon () {
+    return RPC.host({log: true}).then(hub => new RunnerRPC(hub))
 }
 
 
@@ -29,17 +22,13 @@ function RunnerRPC (hub) {
 }
 
 function initRunnerRPC (me) {
-    me.client.on('request', function (from, req, cb) {
+    me.client.on('request', (from, req, cb) => {
         var func = rpcMethods[req[0]]
         var params = req.slice(1)
 
-        Q.try(function () {
-            return func.apply(null, params)
-        })
-        .then(function (result) {
-            cb(['ok', result])
-        })
-        .catch(function (err) {
+        Q.try(() => func.apply(null, params))
+        .then(result => cb(['ok', result]))
+        .catch(err => {
             console.log(err.stack)
             cb(['err', {error: 'failed'}])
         })
@@ -47,12 +36,8 @@ function initRunnerRPC (me) {
     })
 
     var rpcMethods = {
-        'set-unit': function (unitId, tasks) {
-            return me.runner.setUnit(unitId, tasks)
-        },
-        'update-unit': function (unitId) {
-            return me.runner.updateUnit(unitId)
-        },
+        'set-unit': (unitId, tasks) => me.runner.setUnit(unitId, tasks),
+        'update-unit': (unitId) => me.runner.updateUnit(unitId),
         // ...
     }
 }
@@ -70,8 +55,7 @@ function initRunner (me) {
 
     me.setUnit = function (unitId, tasks) {
         me.units[unitId] = {
-            tasks: _.mapValues(tasks,
-                function (task) { return JSON.stringify(task) })
+            tasks: _.mapValues(tasks, task => JSON.stringify(task))
         }
 
         me.markOld(unitId)
@@ -82,7 +66,7 @@ function initRunner (me) {
 
         var batch = []
 
-        _.each(me.units[unitId].tasks, function (_, taskId) {
+        _.each(me.units[unitId].tasks, (_, taskId) => {
             var prevInst = me.getTaskInstances(unitId, taskId)[0]
 
             var needReload = prevInst == null || (prevInst != null && prevInst.marking == 'old')
@@ -102,33 +86,22 @@ function initRunner (me) {
             }
         }
 
-        return Q.all(_.map(batch, function (inst) {
-            return inst.process.sigStart.then(function () { return awaitUp(inst) })
-        }))
-            .then(function () {
-                return me.clearOld(unitId)
-                    .then(function () {
-                        return {
-                            action: 'update',
-                            success: true,
-                            status: 'updated old instances',
-                            message: 'updated instances: ' +
-                                JSON.stringify(_.map(batch, function (inst) {
-                                    return inst.unitId + '#' + inst.taskId })),
-                        }
-                    })
-            })
-            .catch(function (err) {
-                return stopInstances(batch)
-                    .then(function () {
-                        return {
-                            action: 'update',
-                            success: false,
-                            status: 'rolled back',
-                            message: 'error: ' + err.message,
-                        }
-                    })
-            })
+        return Q.all(_.map(batch, inst =>
+            inst.process.sigStart.then(() => awaitUp(inst))
+        ))
+            .then(() =>
+                me.clearOld(unitId).then(() => ({
+                    action: 'update',
+                    success: true,
+                    status: 'updated old instances',
+                    message: 'updated instances: ' + JSON.stringify(_.map(batch, inst => inst.unitId + '#' + inst.taskId)),
+                }) ))
+            .catch(err => stopInstances(batch).then(() => ({
+                action: 'update',
+                success: false,
+                status: 'rolled back',
+                message: 'error: ' + err.message,
+            }) ))
     }
 
     me.clearOld = function (unitId) {
@@ -137,7 +110,7 @@ function initRunner (me) {
     }
 
     me.markOld = function (unitId) {
-        _.each(me.getInstances(unitId), function (inst) {
+        _.each(me.getInstances(unitId), inst => {
             var tasks = me.units[inst.unitId] && me.units[inst.unitId].tasks
             var taskSrc = tasks && tasks[inst.taskId]
 
@@ -148,18 +121,15 @@ function initRunner (me) {
     }
 
     me.getInstances = function (unitId) {
-        return _.filter(me.instances, function (inst) {
-            return inst.unitId == unitId && inst.procState != 'stopped'
-        })
+        return _.filter(me.instances, inst =>
+            inst.unitId == unitId && inst.procState != 'stopped')
     }
 
     me.getTaskInstances = function (unitId, taskId) {
-        return _.filter(me.instances, function (inst) {
-            return (
-                inst.unitId == unitId
-                && inst.taskId == taskId
-                && inst.procState != 'stopped' )
-        })
+        return _.filter(me.instances, inst =>
+            inst.unitId == unitId
+            && inst.taskId == taskId
+            && inst.procState != 'stopped' )
     }
 
     function newInstance (unitId, taskId) {
@@ -176,9 +146,7 @@ function initRunner (me) {
             process: execInstance(unitId + '#' + taskId, src),
         }
 
-        inst.process.sigExit.then(function () {
-            inst.procState = 'stopped'
-        })
+        inst.process.sigExit.then(() => inst.procState = 'stopped')
 
         return inst
     }
@@ -190,7 +158,7 @@ function initRunner (me) {
     }
 
     function stopInstances (list) {
-        return Q.all(_.map(list, function (inst) { return stopInstance(inst) }))
+        return Q.all(_.map(list, inst => stopInstance(inst)))
     }
 
     function execInstance (label, task) {
@@ -205,12 +173,14 @@ function initRunner (me) {
     }
 
     function awaitUp (inst) {
-        return RPC.watchPeer(me.client, function (peer) {
-            return RegExp('#' + inst.process.proc.pid + '$').test(peer.attributes.origin)
-        })
-        .filter(function (val) { return val != null })
-        .take(1)
-        .toPromise(Q.Promise)
+        return Wait.whenStream(
+            RPC.watchPeer(me.client, peer => getPeerPid(peer) == inst.process.handle.pid ),
+            val => val != null)
+
+        function getPeerPid (peer) {
+            var match = /#(\d+)$/.exec(peer.attributes.origin)
+            return match && match[1]
+        }
     }
 }
 
@@ -227,16 +197,16 @@ function initHost (host) {
             params.run[0], params.run.slice(1),
             { env: params.env || {}, cwd: params.cwd })
 
-        proc.stdout.on('data', function (d) { process.stdout.write('[host] ' + params.label + ': ' + d) })
-        proc.stderr.on('data', function (d) { process.stdout.write('[host] ' + params.label + '! ' + d) })
+        proc.stdout.on('data', d => process.stdout.write('[host] ' + params.label + ': ' + d))
+        proc.stderr.on('data', d => process.stdout.write('[host] ' + params.label + '! ' + d))
 
-        var sigStart = Q.Promise(function (resolve, reject) {
+        var sigStart = Q.Promise((resolve, reject) => {
             K.merge([
                 K.later(100, 'ok'),
                 K.fromEvents(proc, 'error'),
-                K.fromEvents(proc, 'exit', function (code) { return {exited: code} })
+                K.fromEvents(proc, 'exit', code => {exited: code})
                 ]).take(1)
-            .onValue(function (val) {
+            .onValue(val => {
                 if(val == 'ok') resolve()
                 else reject(val)
             })
@@ -250,7 +220,7 @@ function initHost (host) {
         var desc = {
             id: host.idCount ++,
             params: params,
-            proc: proc,
+            handle: proc,
             sigStart: sigStart,
             sigExit: sigExit,
             inspect: function () { return '<process ' + proc.pid + '>' },
@@ -262,6 +232,6 @@ function initHost (host) {
     }
 
     host.stop = function (desc) {
-        desc.proc.kill()
+        desc.handle.kill()
     }
 }
