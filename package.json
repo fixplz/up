@@ -1,0 +1,13 @@
+{
+  "name": "up",
+  "dependencies": {
+    "amp": "^0.3.1",
+    "babel": "^5.5.8",
+    "event-stream": "^3.3.1",
+    "kefir": "^2.5.0",
+    "lodash": "^3.9.3",
+    "q": "^1.4.1",
+    "source-map-support": "^0.3.2",
+    "watchable-store": "git+https://github.com/fixplz/watchable-store.git"
+  }
+}
