@@ -6,7 +6,6 @@ var RPC = require('./lib/up-rpc')
 RPC.connect({
     name: 'Up-Node',
     attributes: { run: process.argv.slice(2) },
-    log: true,
 })
 .then(function (client) {
 

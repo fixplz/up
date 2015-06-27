@@ -1,7 +1,9 @@
 var FS = require('fs')
 
-var x = FS.openSync('./wow', 'w')
+var x = FS.openSync('./log', 'a')
+
+FS.write(x, 'started\n')
 
 setInterval(function () {
-    FS.write(x, 'wow ' + process.argv[2] + '\n')
+    FS.write(x, 'log ' + process.argv[2] + '\n')
 }, 1000)

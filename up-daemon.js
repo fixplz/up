@@ -1,35 +1,50 @@
 import FS from 'fs'
 import CP from 'child_process'
 import Path from 'path'
-import _ from 'lodash'
+import L from 'lodash'
 import Q from 'q'
 import K from 'kefir'
 
 import * as RPC from './lib/up-rpc'
-import * as Wait from './lib/wait'
+import {whenStream} from './lib/wait'
+import Store from './lib/store'
+
+Q.longStackSupport = true
 
 
 export function startDaemon () {
-    return RPC.host({log: true}).then(hub => new RunnerRPC(hub))
+    return RPC.host().then(hub => new RunnerRPC(hub))
+}
+
+function log (...args) {
+    console.log('[up]', ...args)
 }
 
 
 function RunnerRPC (hub) {
-    this.client = RPC.connectLocally(hub, { name: 'Runner', log: true })
+    this.client = RPC.connectLocally(hub, { name: 'Runner' })
     this.runner = new ProcessRunner(this.client)
 
     initRunnerRPC(this)
+
+    log('ready')
 }
 
 function initRunnerRPC (me) {
     me.client.on('request', (from, req, cb) => {
-        var func = rpcMethods[req[0]]
+        var func = req[0]
         var params = req.slice(1)
 
-        Q.try(() => func.apply(null, params))
-        .then(result => cb(['ok', result]))
+        log('action', func, params)
+
+        Q.try(() => rpcMethods[func].apply(null, params))
+        .then(result => {
+            log(func, 'ok')
+            cb(['ok', result])
+        })
         .catch(err => {
-            console.log(err.stack)
+            log('!!!', func, 'error')
+            log(err.stack)
             cb(['err', {error: 'failed'}])
         })
         .done()
@@ -45,8 +60,8 @@ function initRunnerRPC (me) {
 function ProcessRunner (client) {
     this.client = client
     this.host = new ProcessHost()
-    this.units = Object.create(null)
-    this.instances = []
+    this.units = Store({})
+    this.instances = Store([])
 
     initRunner(this)
 }
@@ -54,133 +69,150 @@ function ProcessRunner (client) {
 function initRunner (me) {
 
     me.setUnit = function (unitId, tasks) {
-        me.units[unitId] = {
-            tasks: _.mapValues(tasks, task => JSON.stringify(task))
-        }
-
-        me.markOld(unitId)
+        me.units.set(unitId, { tasks })
+        markOld(unitId)
     }
 
     me.updateUnit = function (unitId) {
-        var unitInstances = me.getInstances(unitId)
+        var unitInstances = getInstances(unitId)
+        var oldInstances = unitInstances.filter(inst => inst.marking == 'old' )
 
-        var batch = []
+        var newInstances = []
 
-        _.each(me.units[unitId].tasks, (_, taskId) => {
-            var prevInst = me.getTaskInstances(unitId, taskId)[0]
+        L.each(me.units.get(unitId).tasks, (_, taskId) => {
+            var taskInsts = unitInstances.filter(inst => inst.taskId == taskId)
 
-            var needReload = prevInst == null || (prevInst != null && prevInst.marking == 'old')
-            if(! needReload) return
+            var needUpdate = taskInsts.length == 0 || L.all(taskInsts, inst => inst.marking == 'old')
 
-            var inst = newInstance(unitId, taskId)
-            batch.push(inst)
-            me.instances.push(inst)
+            if(needUpdate)
+                newInstances.push(spawnInstance(unitId, taskId))
         })
 
-        if(batch.length == 0) {
-            return {
+        if(newInstances.length == 0 && oldInstances.length == 0) {
+            log('nothing to do')
+            return Q({
                 action: 'update',
-                success: false,
-                status: 'no action taken',
+                success: true,
                 message: 'nothing to update'
-            }
+            })
         }
 
-        return Q.all(_.map(batch, inst =>
-            inst.process.sigStart.then(() => awaitUp(inst))
-        ))
-            .then(() =>
-                me.clearOld(unitId).then(() => ({
-                    action: 'update',
-                    success: true,
-                    status: 'updated old instances',
-                    message: 'updated instances: ' + JSON.stringify(_.map(batch, inst => inst.unitId + '#' + inst.taskId)),
-                }) ))
-            .catch(err => stopInstances(batch).then(() => ({
-                action: 'update',
-                success: false,
-                status: 'rolled back',
-                message: 'error: ' + err.message,
-            }) ))
+        return (
+            Q.all(newInstances.map(inst => awaitUp(inst)))
+            .then(
+                () =>
+                    stopInstances(oldInstances)
+                    .then(() => ({
+                        action: 'update',
+                        success: true,
+                        message: `updated instances: ${showInstances(newInstances)}, stopped instances: ${showInstances(oldInstances)}`,
+                    })),
+                err =>
+                    Q(unmarkOld())
+                    .then(() => stopInstances(newInstances))
+                    .then(() => ({
+                        action: 'update',
+                        success: false,
+                        message: 'error: ${err.message}',
+                    }))
+            )
+        )
+
+        function showInstances (list) {
+            return JSON.stringify(L.map(list, inst => inst.proc.name))
+        }
     }
 
-    me.clearOld = function (unitId) {
-        return stopInstances(
-            _.filter(me.getInstances(unitId), { procState: 'running', marking: 'old' }))
-    }
+    function markOld(unitId) {
+        getInstances(unitId).forEach(inst => {
+            var curDef = me.units.get(inst.unitId).tasks[inst.taskId]
 
-    me.markOld = function (unitId) {
-        _.each(me.getInstances(unitId), inst => {
-            var tasks = me.units[inst.unitId] && me.units[inst.unitId].tasks
-            var taskSrc = tasks && tasks[inst.taskId]
-
-            if(taskSrc == null || inst.src != taskSrc) {
-                inst.marking = 'old'
-            }
+            if(curDef == null || JSON.stringify(inst.def) != JSON.stringify(curDef))
+                markInstance(inst, 'old')
         })
     }
 
-    me.getInstances = function (unitId) {
-        return _.filter(me.instances, inst =>
-            inst.unitId == unitId && inst.procState != 'stopped')
+    function unmarkOld(unitId) {
+        getInstances(unitId).forEach(inst => {
+            if(inst.marking == 'old')
+                markInstance(inst, 'run')
+        })
     }
 
-    me.getTaskInstances = function (unitId, taskId) {
-        return _.filter(me.instances, inst =>
-            inst.unitId == unitId
-            && inst.taskId == taskId
-            && inst.procState != 'stopped' )
+    function getInstances(unitId) {
+        return me.instances.get().filter(inst => inst.unitId == unitId && inst.procState != 'stopped')
     }
 
-    function newInstance (unitId, taskId) {
-        var src = me.units[unitId].tasks[taskId]
+    function markInstance (inst, marking) {
+        me.instances.update(inst.id, it => ({ ...it, marking }))
+    }
 
-        var inst = {
-            unitId: unitId,
-            taskId: taskId,
-            src: src,
+    function spawnInstance (unitId, taskId) {
+        var def = me.units.get(unitId).tasks[taskId]
+
+        var proc =  me.host.run({
+            name: unitId + '#' + taskId,
+            run: [process.argv[0], __dirname + '/up-starter.js', ...def.run],
+            env: def.env,
+            cwd: def.cwd
+        })
+
+        log('spawn', proc.name)
+
+        var inst = addInstance({
+            unitId, taskId, proc, def,
             time: Date.now(),
             marking: 'run',
-            procState: 'running',
+            procState: '?',
             appState: '?',
-            process: execInstance(unitId + '#' + taskId, src),
-        }
+        })
 
-        inst.process.sigExit.then(() => inst.procState = 'stopped')
+        syncProcStatus(proc, inst.id)
 
         return inst
+
+        function syncProcStatus (proc, instId) {
+            proc.sigStart.then(
+                () => me.instances.update(instId, it => ({...it, procState: 'running' })),
+                () => me.instances.update(instId, it => ({...it, procState: 'stopped' }))
+            )
+            .done()
+
+            proc.sigExit.then(() =>
+                me.instances.update(instId, it => ({...it, procState: 'stopped' })) )
+            .done()
+        }
+    }
+
+    function addInstance (def) {
+        def.id = me.instances.get().length
+        me.instances.update(it => [...it, def])
+        return def
     }
 
     function stopInstance (inst) {
-        inst.marking = 'stop'
-        me.host.stop(inst.process)
-        return inst.process.sigExit
+        log('stop', inst.proc.name)
+
+        markInstance(inst, 'stop')
+
+        me.host.stop(me.instances.get(inst.id).proc)
+
+        return whenStream(
+            me.instances.stream(inst.id),
+            inst => inst.procState == 'stopped')
     }
 
     function stopInstances (list) {
-        return Q.all(_.map(list, inst => stopInstance(inst)))
-    }
-
-    function execInstance (label, task) {
-        if(typeof task == 'string') task = JSON.parse(task)
-
-        return me.host.run({
-            label: label,
-            run: [process.argv[0], __dirname + '/up-starter.js'].concat(task.run),
-            env: task.env,
-            cwd: task.cwd
-        })
+        return Q.all(L.map(list, inst => stopInstance(inst)))
     }
 
     function awaitUp (inst) {
-        return Wait.whenStream(
-            RPC.watchPeer(me.client, peer => getPeerPid(peer) == inst.process.handle.pid ),
-            val => val != null)
-
-        function getPeerPid (peer) {
-            var match = /#(\d+)$/.exec(peer.attributes.origin)
-            return match && match[1]
-        }
+        return (
+            whenStream(me.instances.stream(inst.id), inst => inst.procState == 'running')
+            .then(() => whenStream(
+                RPC.watchPeer(me.client, peer => peer.attributes.origin.pid == inst.proc.handle.pid),
+                peer => peer != null))
+        )
     }
 }
 
@@ -191,26 +223,34 @@ function ProcessHost () {
     initHost(this)
 }
 
+function logHost (...args) {
+    console.log('[host]', ...args)
+}
+
 function initHost (host) {
+    function procLog (prefix, data) {
+        var lines = data.toString().split('\n')
+        if(L.last(lines) == '') lines.pop()
+        logHost(lines.map(l => prefix + l).join('\n'))
+    }
+
     host.run = function (params) {
         var proc = CP.spawn(
             params.run[0], params.run.slice(1),
             { env: params.env || {}, cwd: params.cwd })
 
-        proc.stdout.on('data', d => process.stdout.write('[host] ' + params.label + ': ' + d))
-        proc.stderr.on('data', d => process.stdout.write('[host] ' + params.label + '! ' + d))
+        var name = `${params.name} (${proc.pid})`
 
-        var sigStart = Q.Promise((resolve, reject) => {
+        proc.stdout.on('data', d => procLog(name + ': ', d))
+        proc.stderr.on('data', d => procLog(name + '! ', d))
+
+        var sigStart = whenStream(
             K.merge([
                 K.later(100, 'ok'),
-                K.fromEvents(proc, 'error'),
-                K.fromEvents(proc, 'exit', code => {exited: code})
-                ]).take(1)
-            .onValue(val => {
-                if(val == 'ok') resolve()
-                else reject(val)
-            })
-        })
+                K.fromEvents(proc, 'error').valuesToErrors(),
+                K.fromEvents(proc, 'exit', code => {exited: code}).valuesToErrors(),
+            ])
+        )
 
         var sigExit = Q.Promise(function (resolve) {
             K.fromEvents(proc, 'exit').take(1).onValue(resolve)
@@ -219,6 +259,7 @@ function initHost (host) {
 
         var desc = {
             id: host.idCount ++,
+            name,
             params: params,
             handle: proc,
             sigStart: sigStart,
