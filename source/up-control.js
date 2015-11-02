@@ -6,7 +6,7 @@ import * as  RPC from './up-rpc'
 export function getController (opts) {
     if(opts == null) opts = {}
 
-    return RPC.connect({name: opts.name || 'Controller'})
+    return RPC.connect({name: opts.name || 'Controller', log: opts.log})
         .then(client => new Controller(client))
 }
 
@@ -23,6 +23,14 @@ function initController (me) {
         throw new Error('runner not found')
 
     me.runner = runner
+
+    me.statusAll = function () {
+        return getResponse(cb => me.client.requestTo(runner, ['status-all'], cb))
+    }
+
+    me.statusUnit = function (unitId) {
+        return getResponse(cb => me.client.requestTo(runner, ['status-unit', unitId], cb))
+    }
 
     me.setUnit = function (unitId, def) {
         return getResponse(cb => me.client.requestTo(runner, ['set-unit', unitId, def], cb))

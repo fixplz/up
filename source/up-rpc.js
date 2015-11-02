@@ -2,9 +2,9 @@ import Q from 'q'
 import K from 'kefir'
 import L from 'lodash'
 
-import Sock from './sock'
-import RPCHub from './rpc-hub'
-import {whenStream} from './async'
+import Sock from './util/sock'
+import RPCHub from './util/rpc-hub'
+import {whenStream} from './util/async'
 
 
 var sockpath = '/up/hub'

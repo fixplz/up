@@ -29,7 +29,7 @@ function createServer (params) {
                 checkSocket(params).then(function (isActive) {
                     if(isActive) reject(err)
                     else {
-                        fs.unlink(params.path)
+                        fs.unlinkSync(params.path)
                         listen()
                     }
                 })

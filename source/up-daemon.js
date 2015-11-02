@@ -6,8 +6,8 @@ import Q from 'q'
 import K from 'kefir'
 
 import * as RPC from './up-rpc'
-import {whenStream, go} from './async'
-import Store from './store'
+import {whenStream, go} from './util/async'
+import Store from './util/store'
 
 
 export async function startDaemon () {
@@ -39,20 +39,22 @@ function initRunnerRPC (me) {
             Q.try(() => rpcMethods[func].apply(null, params))
             .then(
                 result => {
-                    log(func, 'ok')
                     cb(['ok', result])
+                    log(func, 'ok')
                 },
                 err => {
+                    cb(['err', {error: 'failed'}])
                     log('!!!', func, 'error')
                     log(err.stack)
-                    cb(['err', {error: 'failed'}])
                 }))
     })
 
     var rpcMethods = {
+        'status-all': () => me.runner.statusAll(),
+        'status-unit': (unitId) => me.runner.statusUnit(unitId),
         'set-unit': (unitId, tasks) => me.runner.setUnit(unitId, tasks),
         'update-unit': (unitId) => me.runner.updateUnit(unitId),
-        // ...
+        'remove-unit': (unitId) => me.runner.removeUnit(unitId),
     }
 }
 
@@ -66,6 +68,36 @@ function ProcessRunner (client) {
 }
 
 function initRunner (me) {
+
+    me.statusAll = function () {
+        return L.map(me.units.get(), (unit, unitId) => {
+            var instances = getInstances(unitId)
+            return {
+                unitId,
+                tasks: L.keys(unit.tasks),
+                instances: instances.map(inst => ({taskId: inst.taskId, pid: inst.proc.pid}))
+            }
+        })
+    }
+
+    me.statusUnit = function (unitId) {
+        var unit
+        try {
+            unit = me.units.get(unitId)
+        }
+        catch(err) {
+            return null
+        }
+
+        return {
+            unitId,
+            tasks: unit.tasks,
+            instances: getInstances(unitId).map(inst => {
+                var {proc: {pid, name}} = inst
+                return {...inst, proc: {pid, name}}
+            })
+        }
+    }
 
     me.setUnit = function (unitId, tasks) {
         me.units.set(unitId, { tasks })
@@ -120,6 +152,16 @@ function initRunner (me) {
         }
     }
 
+    me.removeUnit = async function (unitId) {
+        me.units.set(unitId, () => null)
+        await stopInstances(getInstances(unitId))
+        return {
+            action: 'remove',
+            success: true,
+            message: 'removed unit',
+        }
+    }
+
     function markOld(unitId) {
         getInstances(unitId).forEach(inst => {
             if(instNeedsReload(inst.def, me.units.get(inst.unitId).tasks[inst.taskId]))
@@ -151,7 +193,12 @@ function initRunner (me) {
 
         var proc = me.host.run({
             name: unitId + '#' + taskId,
-            run: [process.argv[0], Path.resolve(__dirname, '../bin/up-starter.js'), ...def.run],
+            run: [
+                process.argv[0],
+                Path.resolve(__dirname, './cmd/up-run.js'),
+                Path.resolve(__dirname, './up-starter.js'),
+                ...def.run
+            ],
             env: def.env,
             cwd: def.cwd
         })
@@ -173,7 +220,6 @@ function initRunner (me) {
             await proc.exited
             me.instances.modify(inst, { procState: 'stopped' })
         })
-
 
         return inst
     }
