@@ -114,7 +114,7 @@ function initHub (hub) {
             }
 
             if(msg[0] == 'unsubscribe' && msg[1] != null) {
-                removeSubscriber(msg[1], peer)
+                removeListener(msg[1], peer)
                 return
             }
 
@@ -254,7 +254,9 @@ function initClient (me) {
     })
 
     me.on('newListener', function (ev) {
-        if(! isHubEvent(ev))
+        ev = getEventName(ev)
+
+        if(ev == null)
             return
 
         if(me.listeners[ev] != null && me.listeners[ev] > 0) {
@@ -267,7 +269,9 @@ function initClient (me) {
     })
 
     me.on('removeListener', function (ev) {
-        if(! isHubEvent(ev))
+        ev = getEventName(ev)
+
+        if(ev == null)
             return
 
         if(me.listeners[ev] != null) {
@@ -280,8 +284,9 @@ function initClient (me) {
         }
     })
 
-    function isHubEvent (name) {
-        return /^cast:\w+$/.test(name)
+    function getEventName (name) {
+        var match = /^cast:(\w+)$/.exec(name)
+        return match && match[1]
     }
 
     function subscribe (event) {
@@ -298,13 +303,13 @@ function initClient (me) {
     }
 
     me.sendTo = function (peer, params) {
-        peer = getPeer(peer)
+        peer = getPeerId(peer)
         me.emit('log', ['->', 'message-to', peer])
         queue.write(['message-to', peer, params])
     }
 
     me.requestTo = function (peer, params, cb) {
-        peer = getPeer(peer)
+        peer = getPeerId(peer)
 
         if(typeof cb != 'function') throw new Error('invalid callback')
 
@@ -315,10 +320,15 @@ function initClient (me) {
         queue.write(['message-to', peer, ['~req', reqId, params]])
     }
 
-    function getPeer (peer) {
+    function getPeerId (peer) {
         if(typeof peer == 'object') peer = peer.id
         if(typeof peer != 'number') throw new Error('invalid peer ' + peer)
         return peer
+    }
+
+    function getPeer (peer) {
+        if(typeof peer == 'object') return peer
+        return _.find(me.peers, function (it) { return it.id == peer })
     }
 
     me.close = function () {
@@ -362,7 +372,7 @@ function initClient (me) {
 
             if(msg[0] == 'event' && typeof msg[1] == 'number' && typeof msg[2] == 'string') {
                 var from = msg[1], ev = msg[2], params = msg[3]
-                me.emit('cast:' + ev, from, params)
+                me.emit('cast:' + ev, getPeer(from), params)
                 return
             }
 
@@ -371,7 +381,7 @@ function initClient (me) {
                 if(Array.isArray(params) && params[0] == '~req') {
                     var reqId = params[1], reqParams = params[2]
                     var sent = false
-                    me.emit('request', from, reqParams, function (resParams) {
+                    me.emit('request', getPeer(from), reqParams, function (resParams) {
                         if(sent) return
                         me.sendTo(from, ['~res', reqId, resParams])
                         sent = true
@@ -383,7 +393,7 @@ function initClient (me) {
                     delete me.cbs[reqId]
                 }
                 else
-                    me.emit('message', from, params)
+                    me.emit('message', getPeer(from), params)
                 return
             }
 
