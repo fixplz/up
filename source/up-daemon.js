@@ -234,11 +234,16 @@ function initRunner (me) {
     }
 
     function whenUp (inst) {
-        var peer = RPC.watchPeer(me.client, peer => peer.attributes.origin.pid == inst.proc.pid).filter()
-        var stopped = me.instances.watch(inst).filter(inst => inst.procState == 'stopped')
+        var up =
+            K.fromEvents(me.client, 'cast:up')
+                .filter(peer => peer.attributes.origin.pid == inst.proc.pid)
+
+        var stopped =
+            me.instances.watch(inst)
+                .filter(inst => inst.procState == 'stopped')
 
         return whenStream(K.merge([
-            peer.map(() => true),
+            up.map(() => true),
             stopped.map(() => false)
         ]))
     }
