@@ -7,7 +7,8 @@ import K from 'kefir'
 
 import * as RPC from './up-rpc'
 import {whenStream, go} from './util/async'
-import Store from './util/store'
+import Store from 'mini-store'
+import watchStore from 'mini-store/watch-kefir'
 
 
 export async function startDaemon () {
@@ -58,20 +59,62 @@ function initRunnerRPC (me) {
     }
 }
 
+
 function ProcessRunner (client) {
     this.client = client
     this.host = new ProcessHost()
-    this.units = Store({})
-    this.instances = new InstanceStore()
+    this.units = new Store({})
+    this.instances = new Store({})
 
     initRunner(this)
 }
 
 function initRunner (me) {
 
+    function getUnits () {
+        return me.units.get()
+    }
+
+    function getUnit (unitId) {
+        return me.units.get()[unitId]
+    }
+
+    function putUnit (unitId, def) {
+        me.units.modify(state => ({ ...state, [unitId]: def }))
+    }
+
+    function getInstances () {
+        return me.instances.get()
+    }
+
+    function modifyInstance (instId, func) {
+        me.instances.modify(state => ({ ...state, [instId]: func(state[instId]) }))
+    }
+
+    function markInstance (instId, marking) {
+        modifyInstance(instId, state => ({ ...state, marking }))
+    }
+
+    function watchInstance (instId) {
+        return watchStore(me.instances).map(state => state[instId])
+    }
+
+    function getLiveInstancesForUnit (unitId) {
+        return L.filter(getInstances(),
+            inst => inst.unitId == unitId && inst.procState != 'stopped')
+    }
+
+    var instanceCount = 1
+
+    function addInstance (inst) {
+        inst.id = instanceCount ++
+        me.instances.modify(state => ({ ...state, [inst.id]: inst }))
+        return inst
+    }
+
     me.statusAll = function () {
-        return L.map(me.units.get(), (unit, unitId) => {
-            var instances = getInstances(unitId)
+        return L.map(getUnits(), (unit, unitId) => {
+            var instances = getLiveInstancesForUnit(unitId)
             return {
                 unitId,
                 tasks: L.keys(unit.tasks),
@@ -81,18 +124,15 @@ function initRunner (me) {
     }
 
     me.statusUnit = function (unitId) {
-        var unit
-        try {
-            unit = me.units.get(unitId)
-        }
-        catch(err) {
+        var unit = getUnit(unitId)
+
+        if(unit == null)
             return null
-        }
 
         return {
             unitId,
             tasks: unit.tasks,
-            instances: getInstances(unitId).map(inst => {
+            instances: getLiveInstancesForUnit(unitId).map(inst => {
                 var {proc: {pid, name}} = inst
                 return {...inst, proc: {pid, name}}
             })
@@ -100,24 +140,24 @@ function initRunner (me) {
     }
 
     me.setUnit = function (unitId, tasks) {
-        me.units.set(unitId, { tasks })
+        putUnit(unitId, { tasks })
         markOld(unitId)
     }
 
     me.updateUnit = async function (unitId) {
-        var unitInstances = getInstances(unitId)
+        var unitInstances = getLiveInstancesForUnit(unitId)
 
         var oldInstances = unitInstances.filter(inst => inst.marking == 'old' )
 
         var newInstances = []
 
-        L.each(me.units.get(unitId).tasks, (_, taskId) => {
+        L.each(getUnit(unitId).tasks, (_, taskId) => {
             var taskInsts = unitInstances.filter(inst => inst.taskId == taskId)
 
             var needUpdate = taskInsts.length == 0 || L.all(taskInsts, inst => inst.marking == 'old')
 
             if(needUpdate)
-                newInstances.push(spawnInstance(unitId, taskId))
+                newInstances.push(startInstance(unitId, taskId))
         })
 
         if(newInstances.length == 0 && oldInstances.length == 0) {
@@ -153,8 +193,8 @@ function initRunner (me) {
     }
 
     me.removeUnit = async function (unitId) {
-        me.units.set(unitId, () => null)
-        await stopInstances(getInstances(unitId))
+        putUnit(unitId, null)
+        await stopInstances(getLiveInstancesForUnit(unitId))
         return {
             action: 'remove',
             success: true,
@@ -163,9 +203,9 @@ function initRunner (me) {
     }
 
     function markOld(unitId) {
-        getInstances(unitId).forEach(inst => {
-            if(instNeedsReload(inst.def, me.units.get(inst.unitId).tasks[inst.taskId]))
-                markInstance(inst, 'old')
+        getLiveInstancesForUnit(unitId).forEach(inst => {
+            if(instNeedsReload(inst.def, getUnit(inst.unitId).tasks[inst.taskId]))
+                markInstance(inst.id, 'old')
         })
 
         function instNeedsReload (last, cur) {
@@ -174,22 +214,14 @@ function initRunner (me) {
     }
 
     function unmarkOld(unitId) {
-        getInstances(unitId).forEach(inst => {
+        getLiveInstancesForUnit(unitId).forEach(inst => {
             if(inst.marking == 'old')
-                markInstance(inst, 'run')
+                markInstance(inst.id, 'run')
         })
     }
 
-    function getInstances(unitId) {
-        return me.instances.list(inst => inst.unitId == unitId && inst.procState != 'stopped')
-    }
-
-    function markInstance (inst, marking) {
-        me.instances.modify(inst.id, {marking})
-    }
-
-    function spawnInstance (unitId, taskId) {
-        var def = me.units.get(unitId).tasks[taskId]
+    function startInstance (unitId, taskId) {
+        var def = getUnit(unitId).tasks[taskId]
 
         var proc = me.host.run({
             name: unitId + '#' + taskId,
@@ -203,30 +235,37 @@ function initRunner (me) {
             cwd: def.cwd
         })
 
-        log('spawn', proc.name)
+        log('start', proc.name)
 
-        var inst = me.instances.add({
-            unitId, taskId, proc, def,
+        var inst = addInstance({
+            unitId,
+            taskId,
+            proc,
+            def,
             procState: 'running',
         })
 
+        trackInstance(inst.id, proc)
+
+        return inst
+    }
+
+    function trackInstance (instId, proc) {
         go(async () => {
-            await me.instances.when(inst, inst => inst.marking == 'stop')
+            await whenStream(watchInstance(instId), inst => inst.marking == 'stop')
             log('stop', proc.name)
             me.host.stop(proc)
         })
 
         go(async () => {
             await proc.exited
-            me.instances.modify(inst, { procState: 'stopped' })
+            modifyInstance(instId, state => ({ ...state, procState: 'stopped' }))
         })
-
-        return inst
     }
 
     function stopInstance (inst) {
-        me.instances.modify(inst, {marking: 'stop'})
-        return me.instances.when(inst, inst => inst.procState == 'stopped')
+        markInstance(inst.id, 'stop')
+        return whenStream(watchInstance(inst.id), inst => inst.procState == 'stopped')
     }
 
     function stopInstances (list) {
@@ -239,7 +278,7 @@ function initRunner (me) {
                 .filter(peer => peer.attributes.origin.pid == inst.proc.pid)
 
         var stopped =
-            me.instances.watch(inst)
+            watchInstance(inst.id)
                 .filter(inst => inst.procState == 'stopped')
 
         return whenStream(K.merge([
@@ -253,47 +292,6 @@ function initRunner (me) {
     }
 }
 
-function InstanceStore () {
-    this.store = Store({})
-    this.idCount = 1
-
-    initInstanceStore(this)
-}
-
-function initInstanceStore (me) {
-    function getId (inst) {
-        if(typeof inst == 'number') return inst
-        if(typeof inst.id) return inst.id
-        throw new Error(`invalid instance ${inst}`)
-    }
-
-    me.get = function (inst) {
-        me.store.get(getId(inst))
-    }
-
-    me.list = function (pred) {
-        return L.filter(this.store.get(), pred)
-    }
-
-    me.modify = function (inst, mod) {
-        me.store.update(getId(inst), state =>
-            typeof mod == 'function' ? mod(state) : {...state, ...mod})
-    }
-
-    me.watch = function (inst) {
-        return me.store.stream(getId(inst))
-    }
-
-    me.when = function (inst, pred) {
-        return whenStream(me.watch(inst), pred)
-    }
-
-    me.add = function (inst) {
-        inst.id = me.idCount ++
-        me.store.set(inst.id, inst)
-        return inst
-    }
-}
 
 function ProcessHost () {
     this.processes = []
