@@ -1,6 +1,6 @@
 import Q from 'Q'
 import _ from 'lodash'
-import * as  RPC from './up-rpc'
+import * as  RPC from './rpc'
 
 
 export function getController (opts) {
