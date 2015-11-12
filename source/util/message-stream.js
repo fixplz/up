@@ -13,11 +13,14 @@ exports.asMessageStream = function (stream) {
         })
         .on('error', function (err) { incoming.emit('error', err) })
 
-    stream.on('data', function (d) { parser.write(d) })
-
     var outgoing = es.through(function (obj) {
         stream.write(amp.encode([Buffer(JSON.stringify(obj))]))
     })
 
-    return es.duplex(outgoing, incoming)
+    var duplex = es.duplex(outgoing, incoming)
+
+    stream.on('data', function (d) { parser.write(d) })
+    stream.on('error', function (err) { duplex.emit('error', new Error("Message stream error: " + err.message)) })
+
+    return duplex
 }
