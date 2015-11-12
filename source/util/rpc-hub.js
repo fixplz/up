@@ -317,7 +317,7 @@ function initClient (me) {
         me.cbs[reqId] = cb
 
         me.emit('log', ['->', 'request-to', peer])
-        queue.write(['message-to', peer, ['~req', reqId, params]])
+        queue.write(['message-to', peer, {'?rpc': 'request', id: reqId, request: params}])
     }
 
     function getPeerId (peer) {
@@ -364,36 +364,42 @@ function initClient (me) {
                 return
             }
 
-            if(msg[0] == 'peers' && Array.isArray(msg[1])) {
+            if(msg[0] == 'peers') {
                 me.peers = msg[1]
                 me.emit('peers', me.peers)
                 return
             }
 
-            if(msg[0] == 'event' && typeof msg[1] == 'number' && typeof msg[2] == 'string') {
-                var from = msg[1], ev = msg[2], params = msg[3]
-                me.emit('cast:' + ev, getPeer(from), params)
+            if(msg[0] == 'event') {
+                var from = msg[1], ev = msg[2], body = msg[3]
+                me.emit('cast:' + ev, {from: getPeer(from), message: body})
                 return
             }
 
-            if(msg[0] == 'message-from' && typeof msg[1] == 'number') {
-                var from = msg[1], params = msg[2]
-                if(Array.isArray(params) && params[0] == '~req') {
-                    var reqId = params[1], reqParams = params[2]
+            if(msg[0] == 'message-from') {
+                var from = msg[1], body = msg[2]
+
+                if(body['?rpc'] == 'request') {
                     var sent = false
-                    me.emit('request', getPeer(from), reqParams, function (resParams) {
-                        if(sent) return
-                        me.sendTo(from, ['~res', reqId, resParams])
-                        sent = true
+                    me.emit('request', {
+                        from: getPeer(from),
+                        request: body.request,
+                        respond: function (response) {
+                            if(sent) return
+                            sent = true
+                            me.sendTo(from, {'?rpc': 'response', id: body.id, response: response})
+                        },
                     })
+                    return
                 }
-                else if(Array.isArray(params) && params[0] == '~res') {
-                    var reqId = params[1], resParams = params[2]
-                    me.cbs[reqId](from, resParams)
-                    delete me.cbs[reqId]
+
+                if(body['?rpc'] == 'response') {
+                    me.cbs[body.id]({from: from, response: body.response})
+                    delete me.cbs[body.id]
+                    return
                 }
-                else
-                    me.emit('message', getPeer(from), params)
+
+                me.emit('message', getPeer(from), body)
                 return
             }
 

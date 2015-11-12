@@ -3,16 +3,12 @@ import _ from 'lodash'
 import * as  RPC from './rpc'
 
 
-export function getController (opts) {
-    if(opts == null) opts = {}
-
-    return RPC.connect({name: opts.name || 'Controller', log: opts.log})
-        .then(client => new Controller(client))
+export async function getController (opts = {}) {
+    return new Controller(await RPC.connect({name: opts.name || 'Controller', log: opts.log}))
 }
 
 export function Controller (client) {
     this.client = client
-
     initController(this)
 }
 
@@ -24,33 +20,20 @@ function initController (me) {
 
     me.runner = runner
 
-    me.statusAll = function () {
-        return getResponse(cb => me.client.requestTo(runner, ['status-all'], cb))
-    }
-
-    me.statusUnit = function (unitId) {
-        return getResponse(cb => me.client.requestTo(runner, ['status-unit', unitId], cb))
-    }
-
-    me.setUnit = function (unitId, def) {
-        return getResponse(cb => me.client.requestTo(runner, ['set-unit', unitId, def], cb))
-    }
-
-    me.updateUnit = function (unitId) {
-        return getResponse(cb => me.client.requestTo(runner, ['update-unit', unitId], cb))
-    }
-
-    me.close = function () {
-        me.client.close()
-    }
+    me.statusAll  = () =>            getResponse(cb => me.client.requestTo(runner, ['status-all'], cb))
+    me.statusUnit = (unitId) =>      getResponse(cb => me.client.requestTo(runner, ['status-unit', unitId], cb))
+    me.setUnit    = (unitId, def) => getResponse(cb => me.client.requestTo(runner, ['set-unit', unitId, def], cb))
+    me.updateUnit = (unitId) =>      getResponse(cb => me.client.requestTo(runner, ['update-unit', unitId], cb))
+    me.close = () => me.client.close()
 }
 
 function getResponse (func) {
     return Q.Promise((resolve, reject) =>
-        func((from, response) => {
-            if(response[0] == 'ok') resolve(response[1])
-            if(response[0] == 'err') reject(response[1])
-            reject(new Error('unrecognized response ' + response[0]))
+        func(msg => {
+            var [status, response] = msg.response
+            if(status == 'ok') resolve(msg.response[1])
+            if(status == 'err') reject(msg.response[1])
+            reject(new Error('unrecognized response ' + msg))
         }) )
 }
 

@@ -18,6 +18,8 @@ function log (...args) {
 }
 
 function initRunnerRPC (hub) {
+    hub.on('error', err => log(err.stack || err))
+
     var client = RPC.connectLocally(hub, { name: 'Runner' })
     var runner = new Runner(client)
 
@@ -29,24 +31,23 @@ function initRunnerRPC (hub) {
         'remove-unit': (unitId) => runner.removeUnit(unitId),
     }
 
-    client.on('request', (from, req, cb) => {
-        var func = req[0]
-        var params = req.slice(1)
+    client.on('request', ({from, request, respond}) => {
+        var [func, ...params] = request
 
-        log('action', func, params)
+        log('request', func, params, 'from', from.name, from.id)
 
-        go(
-            Q.try(() => calls[func].apply(null, params))
-            .then(
-                result => {
-                    cb(['ok', result])
-                    log(func, 'ok')
-                },
-                err => {
-                    cb(['err', {error: 'failed'}])
-                    log('!!!', func, 'error')
-                    log(err.stack)
-                }))
+        go(async () => {
+            try {
+                let result = await calls[func](...params)
+                respond(['ok', result])
+                log(func, 'ok')
+            }
+            catch(err) {
+                respond(['err', {error: 'failed'}])
+                log('!!!', func, 'error')
+                log(err.stack)
+            }
+        })
     })
 
     log('ready')
