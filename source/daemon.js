@@ -4,9 +4,13 @@ import Q from 'q'
 import K from 'kefir'
 
 import * as RPC from './rpc'
-import {whenStream, go} from './util/async'
-import RunnerState from './state'
 import ProcessHost from './process-host'
+
+import watch from 'mini-store/watch-kefir'
+import {whenStream, go} from './util/async'
+import Store from 'mini-store/store'
+import Tree from 'mini-store/tree'
+import TreeStore from 'mini-store/tree-store'
 
 
 export async function startDaemon () {
@@ -25,7 +29,6 @@ function initRunnerRPC (hub) {
 
     var calls = {
         'status-all':  () => runner.statusAll(),
-        'status-unit': (unitId) => runner.statusUnit(unitId),
         'set-unit':    (unitId, tasks) => runner.setUnit(unitId, tasks),
         'update-unit': (unitId) => runner.updateUnit(unitId),
         'remove-unit': (unitId) => runner.removeUnit(unitId),
@@ -51,90 +54,73 @@ function initRunnerRPC (hub) {
     })
 
     log('ready')
-
 }
 
+
+function respondOk (message) {
+    return { success: true, message }
+}
+
+function respondFail (message) {
+    return { success: false, message }
+}
 
 class Runner {
     constructor (client) {
         this.client = client
         this.host = new ProcessHost()
-        this.state = new RunnerState()
+
+        this.store = new TreeStore(new Store(new Tree({})))
+        this.units = this.store.at('units')
+        this.instances = this.store.at('instances')
+        this.instanceCount = this.store.at('instanceCount')
+        this.instanceCount.set(1)
     }
 
     statusAll () {
-        return L.map(this.state.getUnits(), (unit, unitId) => {
-            var instances = this.state.getLiveInstancesForUnit(unitId)
+        return L.map(this.units.get(), (unit, unitId) => {
+            var instances = this.instancesForUnit(unitId)
             return {
                 unitId,
-                tasks: L.keys(unit.tasks),
-                instances: instances.map(inst => ({taskId: inst.taskId, pid: inst.proc.pid}))
+                tasks: unit.tasks,
+                instances: this.instancesForUnit(unitId).map(inst => {
+                    var {unitId, taskId, proc, procState, marking, def} = inst
+                    return {unitId, taskId, procState, marking, pid: proc.pid, run: def.run}
+                }),
             }
         })
-    }
-
-    statusUnit (unitId) {
-        var unit = this.state.getUnit(unitId)
-
-        if(unit == null)
-            return null
-
-        return {
-            unitId,
-            tasks: unit.tasks,
-            instances: this.state.getLiveInstancesForUnit(unitId).map(inst => {
-                var {proc: {pid, name}} = inst
-                return {...inst, proc: {pid, name}}
-            })
-        }
     }
 
     setUnit (unitId, tasks) {
-        this.state.putUnit(unitId, { tasks })
-        this.markOld(unitId)
+        this.units.at(unitId).set({tasks})
     }
 
     async updateUnit (unitId) {
-        var unitInstances = this.state.getLiveInstancesForUnit(unitId)
+        var tasks = this.units.at(unitId).get().tasks
 
-        var oldInstances = unitInstances.filter(inst => inst.marking == 'old' )
+        var [oldInstances, liveInstances] =
+            L.partition(this.liveInstancesForUnit(unitId), instanceNeedsReload)
 
-        var newInstances = []
-
-        L.each(this.state.getUnit(unitId).tasks, (_, taskId) => {
-            var taskInsts = unitInstances.filter(inst => inst.taskId == taskId)
-
-            var needUpdate = taskInsts.length == 0 || L.all(taskInsts, inst => inst.marking == 'old')
-
-            if(needUpdate)
-                newInstances.push(this.startInstance(unitId, taskId))
-        })
+        var newInstances =
+            L.reject(L.keys(tasks), taskId => L.find(liveInstances, {taskId}))
+                .map(taskId => this.startInstance(unitId, taskId))
 
         if(newInstances.length == 0 && oldInstances.length == 0) {
             log('nothing to do')
-            return {
-                action: 'update',
-                success: true,
-                message: 'nothing to update'
-            }
+            return respondOk('nothing to update')
         }
 
         if(await this.whenAllUp(newInstances)) {
-            await this.stopInstances(oldInstances)
-            return {
-                action: 'update',
-                success: true,
-                message: `updated instances: ${showInstances(newInstances)}, stopped instances: ${showInstances(oldInstances)}`,
-            }
+            await this.stopAll(oldInstances)
+            return respondOk(`updated instances: ${showInstances(newInstances)}, stopped instances: ${showInstances(oldInstances)}`)
         }
         else {
-            this.unmarkOld()
-            await this.stopInstances(newInstances)
-            return {
-                action: 'update',
-                success: false,
-                message: 'failed to launch, reverted',
-            }
+            await this.stopAll(newInstances)
+            return respondFail('failed to launch, reverted')
+        }
+
+        function instanceNeedsReload (inst) {
+            return JSON.stringify(inst.def) != JSON.stringify(tasks[inst.taskId])
         }
 
         function showInstances (list) {
@@ -143,35 +129,13 @@ class Runner {
     }
 
     async removeUnit (unitId) {
-        this.state.putUnit(unitId, null)
-        await this.stopInstances(this.state.getLiveInstancesForUnit(unitId))
-        return {
-            action: 'remove',
-            success: true,
-            message: 'removed unit',
-        }
-    }
-
-    markOld (unitId) {
-        this.state.getLiveInstancesForUnit(unitId).forEach(inst => {
-            if(instNeedsReload(inst.def, this.state.getUnit(inst.unitId).tasks[inst.taskId]))
-                this.state.markInstance(inst.id, 'old')
-        })
-
-        function instNeedsReload (last, cur) {
-            return cur == null || JSON.stringify(last) != JSON.stringify(cur)
-        }
-    }
-
-    unmarkOld (unitId) {
-        this.state.getLiveInstancesForUnit(unitId).forEach(inst => {
-            if(inst.marking == 'old')
-                this.state.markInstance(inst.id, 'run')
-        })
+        this.units.at(unitId).set(null)
+        await this.stopAll(this.liveInstancesForUnit(unitId))
+        return respondOk('removed unit')
     }
 
     startInstance (unitId, taskId) {
-        var def = this.state.getUnit(unitId).tasks[taskId]
+        var def = this.units.at(unitId).get().tasks[taskId]
 
         var proc = this.host.run({
             name: unitId + '#' + taskId,
@@ -187,13 +151,18 @@ class Runner {
 
         log('start', proc.name)
 
-        var inst = this.state.addInstance({
+        var inst = {
+            id: this.instanceCount.get(),
             unitId,
             taskId,
             proc,
             def,
-            procState: 'running',
-        })
+            marking: 'run',
+            procState: 'starting',
+        }
+
+        this.instanceCount.modify(count => count + 1)
+        this.instances.at(inst.id).set(inst)
 
         this.trackInstance(inst.id, proc)
 
@@ -202,42 +171,59 @@ class Runner {
 
     trackInstance (instId, proc) {
         go(async () => {
-            await whenStream(this.state.watchInstance(instId), inst => inst.marking == 'stop')
+            await whenStream(K.fromEvents(this.client, 'cast:up'),
+                ev => ev.from.attributes.origin.pid == this.instances.at(instId).get().proc.pid)
+
+            this.instances.at(instId).modify(it => ({...it, procState: 'up'}))
+        })
+
+        go(async () => {
+            await whenStream(
+                watch(this.instances.at(instId)),
+                inst => inst.marking == 'stop')
             log('stop', proc.name)
             this.host.stop(proc)
         })
 
         go(async () => {
             await proc.exited
-            this.state.modifyInstance(instId, state => ({ ...state, procState: 'stopped' }))
+            this.instances.at(instId).modify(it => ({...it, procState: 'stopped'}))
         })
     }
 
-    stopInstance (instId) {
-        this.state.markInstance(instId, 'stop')
-        return whenStream(this.state.watchInstance(instId), inst => inst.procState == 'stopped')
+    async stopInstance (instId) {
+        this.instances.at(instId).modify(it => ({...it, marking: 'stop'}))
+        await whenStream(
+            watch(this.instances.at(instId)),
+            inst => inst.procState == 'stopped')
     }
 
-    stopInstances (list) {
+    async stopAll(list) {
         return Q.all(list.map(inst => this.stopInstance(inst.id)))
     }
 
-    whenUp (inst) {
-        var up =
-            K.fromEvents(this.client, 'cast:up')
-                .filter(peer => peer.attributes.origin.pid == inst.proc.pid)
-
-        var stopped =
-            this.state.watchInstance(inst.id)
-                .filter(inst => inst.procState == 'stopped')
-
-        return whenStream(K.merge([
-            up.map(() => true),
-            stopped.map(() => false)
-        ]))
+    async whenUp (instId) {
+        return whenStream(watch(this.instances.at(instId))
+            .map(inst => {
+                if(inst.procState == 'up')
+                    return true
+                if(inst.procState == 'stopped')
+                    return false
+            }).filter(val => val != null))
     }
 
-    async whenAllUp (list) {
-        return L.all(await Q.all(list.map(::this.whenUp)))
+    async whenAllUp(list) {
+        return L.all(await Q.all(list.map(
+            inst => this.whenUp(inst.id))))
+    }
+
+    instancesForUnit (unitId) {
+        return L.filter(this.instances.get(),
+            inst => inst.unitId == unitId)
+    }
+
+    liveInstancesForUnit (unitId) {
+        return L.filter(this.instances.get(),
+            inst => inst.unitId == unitId && inst.procState != 'stopped')
     }
 }

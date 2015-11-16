@@ -1,4 +1,5 @@
 import Process from 'child_process'
+import L from 'lodash'
 import K from 'kefir'
 import {whenStream} from './util/async'
 
