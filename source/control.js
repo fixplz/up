@@ -1,6 +1,7 @@
 import Q from 'Q'
 import _ from 'lodash'
 import * as  RPC from './rpc'
+import {inspect} from 'util'
 
 
 export async function getController (opts = {}) {
@@ -20,20 +21,20 @@ function initController (me) {
 
     me.runner = runner
 
-    me.statusAll  = () =>            getResponse(cb => me.client.requestTo(runner, ['status-all'], cb))
-    me.statusUnit = (unitId) =>      getResponse(cb => me.client.requestTo(runner, ['status-unit', unitId], cb))
-    me.setUnit    = (unitId, def) => getResponse(cb => me.client.requestTo(runner, ['set-unit', unitId, def], cb))
-    me.updateUnit = (unitId) =>      getResponse(cb => me.client.requestTo(runner, ['update-unit', unitId], cb))
-    me.close = () => me.client.close()
-}
+    me.status     = () =>            request('status')
+    me.setUnit    = (unitId, def) => request('set-unit', unitId, def)
+    me.updateUnit = (unitId) =>      request('update-unit', unitId)
+    me.removeUnit = (unitId) =>      request('remove-unit', unitId)
+    me.close      = () => me.client.close()
 
-function getResponse (func) {
-    return Q.Promise((resolve, reject) =>
-        func(msg => {
-            var [status, response] = msg.response
-            if(status == 'ok') resolve(msg.response[1])
-            if(status == 'err') reject(msg.response[1])
-            reject(new Error('unrecognized response ' + msg))
-        }) )
+    function request (...args) {
+        return Q.Promise((resolve, reject) =>
+            me.client.requestTo(runner, args, msg => {
+                var [status, response] = msg.response
+                if(status == 'ok') resolve(msg.response[1])
+                if(status == 'err') reject(inspect(msg.response[1]))
+                reject(new Error('unrecognized response ' + inspect(msg)))
+            }))
+    }
 }
 

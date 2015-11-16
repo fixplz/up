@@ -11,13 +11,11 @@ async () => {
     console.log('# rpc peers')
     console.log(pp(ctr.client.peers))
 
-    console.log('# status for all units')
-    console.log(pp(await ctr.statusAll()))
-
-    console.log('# status for test unit')
-    console.log(pp(await ctr.statusUnit('test')))
+    console.log('# status')
+    console.log(pp(await ctr.status()))
   }
   finally {
-    await ctr.close()
+    if(ctr)
+      await ctr.close()
   }
 }().done()

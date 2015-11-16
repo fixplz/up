@@ -26,10 +26,11 @@ async () => {
     }
     catch(err) {
         console.log('# error')
-        console.log(pp(err))
+        console.log(err.stack || err)
     }
     finally {
-        ctr.close()
+        if(ctr)
+            ctr.close()
     }
 }().done()
 

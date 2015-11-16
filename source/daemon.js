@@ -28,7 +28,7 @@ function initRunnerRPC (hub) {
     var runner = new Runner(client)
 
     var calls = {
-        'status-all':  () => runner.statusAll(),
+        'status':  () => runner.status(),
         'set-unit':    (unitId, tasks) => runner.setUnit(unitId, tasks),
         'update-unit': (unitId) => runner.updateUnit(unitId),
         'remove-unit': (unitId) => runner.removeUnit(unitId),
@@ -77,7 +77,7 @@ class Runner {
         this.instanceCount.set(1)
     }
 
-    statusAll () {
+    status () {
         return L.map(this.units.get(), (unit, unitId) => {
             var instances = this.instancesForUnit(unitId)
             return {
