@@ -1,4 +1,3 @@
-import Q from 'q'
 import K from 'kefir'
 import L from 'lodash'
 

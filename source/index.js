@@ -1,12 +1,10 @@
 // initialization hacks {
-var Q = require('q')
-Q.longStackSupport = true
-global.Promise = Q.Promise
-
+if(typeof Promise == 'undefined') {
+  global.Promise = require('bluebird')
+}
 require("babel/node_modules/babel-core/node_modules/regenerator/runtime")
 require('babel/register-without-polyfill')({stage: 0})
 // }
-
 
 // make 'up' globally requireable
 require('app-module-path').addPath(__dirname + '/require');

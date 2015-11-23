@@ -1,4 +1,3 @@
-import Q from 'Q'
 import _ from 'lodash'
 import * as  RPC from './rpc'
 import {inspect} from 'util'
@@ -28,7 +27,7 @@ function initController (me) {
     me.close      = () => me.client.close()
 
     function request (...args) {
-        return Q.Promise((resolve, reject) =>
+        return new Promise((resolve, reject) =>
             me.client.requestTo(runner, args, msg => {
                 var [status, response] = msg.response
                 if(status == 'ok') resolve(msg.response[1])

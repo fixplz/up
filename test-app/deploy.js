@@ -32,5 +32,5 @@ async () => {
         if(ctr)
             ctr.close()
     }
-}().done()
+}()
 

@@ -18,4 +18,4 @@ async () => {
     if(ctr)
       await ctr.close()
   }
-}().done()
+}()

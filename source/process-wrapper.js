@@ -1,6 +1,5 @@
 import Up from 'up'
 import Path from 'path'
-import {go} from 'up/util/async'
 
 
 async () => {
@@ -14,4 +13,4 @@ async () => {
     require(Path.resolve(process.cwd(), process.argv[1]))
 
     return client.sendEvent('up')
-}().done()
+}()

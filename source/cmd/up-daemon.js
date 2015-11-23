@@ -1,4 +1,4 @@
 #!/usr/bin/env node
 
 require('..')
-require('../daemon').startDaemon().done()
+require('../daemon').startDaemon()

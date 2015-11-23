@@ -1,13 +1,12 @@
 import Path from 'path'
 import L from 'lodash'
-import Q from 'q'
 import K from 'kefir'
 
 import * as RPC from './rpc'
 import ProcessHost from './process-host'
 
 import watch from 'mini-store/watch-kefir'
-import {whenStream, go} from './util/async'
+import {whenStream} from './util/async'
 import Store from 'mini-store/store'
 import Tree from 'mini-store/tree'
 import TreeStore from 'mini-store/tree-store'
@@ -39,7 +38,7 @@ function initRunnerRPC (hub) {
 
         log('request', func, params, 'from', from.name, from.id)
 
-        go(async () => {
+        async () => {
             try {
                 let result = await calls[func](...params)
                 respond(['ok', result])
@@ -50,7 +49,7 @@ function initRunnerRPC (hub) {
                 log('!!!', func, 'error')
                 log(err.stack)
             }
-        })
+        }()
     })
 
     log('ready')
@@ -170,25 +169,25 @@ class Runner {
     }
 
     trackInstance (instId, proc) {
-        go(async () => {
+        async () => {
             await whenStream(K.fromEvents(this.client, 'cast:up'),
                 ev => ev.from.attributes.origin.pid == this.instances.at(instId).get().proc.pid)
 
             this.instances.at(instId).modify(it => ({...it, procState: 'up'}))
-        })
+        }()
 
-        go(async () => {
+        async () => {
             await whenStream(
                 watch(this.instances.at(instId)),
                 inst => inst.marking == 'stop')
             log('stop', proc.name)
             this.host.stop(proc)
-        })
+        }()
 
-        go(async () => {
+        async () => {
             await proc.exited
             this.instances.at(instId).modify(it => ({...it, procState: 'stopped'}))
-        })
+        }()
     }
 
     async stopInstance (instId) {
@@ -199,7 +198,7 @@ class Runner {
     }
 
     async stopAll(list) {
-        return Q.all(list.map(inst => this.stopInstance(inst.id)))
+        return Promise.all(list.map(inst => this.stopInstance(inst.id)))
     }
 
     async whenUp (instId) {
@@ -213,7 +212,7 @@ class Runner {
     }
 
     async whenAllUp(list) {
-        return L.all(await Q.all(list.map(
+        return L.all(await Promise.all(list.map(
             inst => this.whenUp(inst.id))))
     }
 
