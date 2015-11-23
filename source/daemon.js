@@ -6,13 +6,14 @@ import * as RPC from './rpc'
 import ProcessHost from './process-host'
 
 import watch from 'mini-store/watch-kefir'
-import {whenStream} from './util/async'
+import {whenStream} from 'async-helper/kefir'
 import Store from 'mini-store/store'
 import Tree from 'mini-store/tree'
 import TreeStore from 'mini-store/tree-store'
 
 
 export async function startDaemon () {
+    process.on('uncaughtException', err => log('!!!', err.stack))
     return initRunnerRPC(await RPC.host())
 }
 

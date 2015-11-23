@@ -1,9 +1,9 @@
 import K from 'kefir'
 import L from 'lodash'
 
-import Sock from './util/sock'
-import RPCHub from './util/rpc-hub'
-import {whenStream} from './util/async'
+import Sock from 'fancy-socks'
+import RPCHub from 'stream-rpc'
+import {whenStream} from 'async-helper/kefir'
 
 
 var sockpath = '/up/hub'
@@ -23,7 +23,7 @@ export function connect(clientOpts) {
 
         return whenStream(K.merge([
             K.fromEvents(client, 'peers').map(() => client),
-            K.fromEvents(client, 'error').valuesToErrors(),
+            K.fromEvents(client, 'error').flatMap(err => K.constantError(err)),
         ]))
     })
 }

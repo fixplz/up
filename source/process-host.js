@@ -1,7 +1,7 @@
 import Process from 'child_process'
 import L from 'lodash'
 import K from 'kefir'
-import {whenStream} from './util/async'
+import {whenStream} from 'async-helper/kefir'
 
 export default class ProcessHost {
     constructor () {
