@@ -7,33 +7,27 @@ export async function getController (opts = {}) {
     return new Controller(await RPC.connect({name: opts.name || 'Controller', log: opts.log}))
 }
 
-export function Controller (client) {
-    this.client = client
-    initController(this)
-}
+export class Controller {
+    constructor (client) {
+        this.client = client
 
-function initController (me) {
-    var runner = _.find(me.client.peers, { name: 'Runner' })
+        this.runner = _.find(this.client.peers, { name: 'Runner' })
 
-    if(runner == null)
-        throw new Error('runner not found')
+        if(this.runner == null)
+            throw new Error('runner not found')
 
-    me.runner = runner
+        let request = (...args) =>
+            new Promise((resolve, reject) =>
+                this.client.requestTo(this.runner, args, msg => {
+                    var [status, response] = msg.response
+                    if(status == 'ok') resolve(msg.response[1])
+                    if(status == 'err') reject(inspect(msg.response[1]))
+                    reject(new Error('unrecognized response ' + inspect(msg)))
+                }))
 
-    me.status     = () =>            request('status')
-    me.setUnit    = (unitId, def) => request('set-unit', unitId, def)
-    me.updateUnit = (unitId) =>      request('update-unit', unitId)
-    me.removeUnit = (unitId) =>      request('remove-unit', unitId)
-    me.close      = () => me.client.close()
-
-    function request (...args) {
-        return new Promise((resolve, reject) =>
-            me.client.requestTo(runner, args, msg => {
-                var [status, response] = msg.response
-                if(status == 'ok') resolve(msg.response[1])
-                if(status == 'err') reject(inspect(msg.response[1]))
-                reject(new Error('unrecognized response ' + inspect(msg)))
-            }))
+        this.status     = () =>            request('status')
+        this.updateApp  = (appId, def) =>  request('updateApp', appId, def)
+        this.removeApp  = (appId) =>       request('removeApp', appId)
+        this.close      = () => this.client.close()
     }
 }
-

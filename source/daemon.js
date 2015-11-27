@@ -21,17 +21,16 @@ function log (...args) {
     console.log('[up]', ...args)
 }
 
-function initRunnerRPC (hub) {
+export function initRunnerRPC (hub) {
     hub.on('error', err => log(err.stack || err))
 
     var client = RPC.connectLocally(hub, { name: 'Runner' })
     var runner = new Runner(client)
 
     var calls = {
-        'status':  () => runner.status(),
-        'set-unit':    (unitId, tasks) => runner.setUnit(unitId, tasks),
-        'update-unit': (unitId) => runner.updateUnit(unitId),
-        'remove-unit': (unitId) => runner.removeUnit(unitId),
+        'status':    () => runner.status(),
+        'updateApp': (appId, tasks) => runner.updateApp(appId, tasks),
+        'removeApp': (appId) => runner.removeApp(appId),
     }
 
     client.on('request', ({from, request, respond}) => {
@@ -65,45 +64,40 @@ function respondFail (message) {
     return { success: false, message }
 }
 
-class Runner {
+export class Runner {
     constructor (client) {
         this.client = client
         this.host = new ProcessHost()
 
         this.store = new TreeStore(new Store(new Tree({})))
-        this.units = this.store.at('units')
+        this.apps = this.store.at('apps')
         this.instances = this.store.at('instances')
         this.instanceCount = this.store.at('instanceCount')
         this.instanceCount.set(1)
     }
 
     status () {
-        return L.map(this.units.get(), (unit, unitId) => {
-            var instances = this.instancesForUnit(unitId)
+        return L.map(this.apps.get(), (app, appId) => {
             return {
-                unitId,
-                tasks: unit.tasks,
-                instances: this.instancesForUnit(unitId).map(inst => {
-                    var {unitId, taskId, proc, procState, marking, def} = inst
-                    return {unitId, taskId, procState, marking, pid: proc.pid, run: def.run}
+                appId,
+                tasks: app.tasks,
+                instances: this.instancesForApp(appId).map(inst => {
+                    var {appId, taskId, proc, procState, marking, def} = inst
+                    return {appId, taskId, procState, marking, pid: proc.pid, run: def.run}
                 }),
             }
         })
     }
 
-    setUnit (unitId, tasks) {
-        this.units.at(unitId).set({tasks})
-    }
-
-    async updateUnit (unitId) {
-        var tasks = this.units.at(unitId).get().tasks
+    async updateApp (appId, tasks) {
+        this.apps.at(appId).set({tasks})
 
         var [oldInstances, liveInstances] =
-            L.partition(this.liveInstancesForUnit(unitId), instanceNeedsReload)
+            L.partition(this.liveInstancesForApp(appId), instanceNeedsReload)
 
         var newInstances =
             L.reject(L.keys(tasks), taskId => L.find(liveInstances, {taskId}))
-                .map(taskId => this.startInstance(unitId, taskId))
+                .map(taskId => this.startInstance(appId, taskId))
 
         if(newInstances.length == 0 && oldInstances.length == 0) {
             log('nothing to do')
@@ -128,19 +122,18 @@ class Runner {
         }
     }
 
-    async removeUnit (unitId) {
-        this.units.at(unitId).set(null)
-        await this.stopAll(this.liveInstancesForUnit(unitId))
-        return respondOk('removed unit')
+    async removeApp (appId) {
+        this.apps.at(appId).set(null)
+        await this.stopAll(this.liveInstancesForApp(appId))
+        return respondOk('removed app')
     }
 
-    startInstance (unitId, taskId) {
-        var def = this.units.at(unitId).get().tasks[taskId]
+    startInstance (appId, taskId) {
+        var def = this.apps.at(appId).get().tasks[taskId]
 
         var proc = this.host.run({
-            name: unitId + '#' + taskId,
+            name: appId + '#' + taskId,
             run: [
-                process.argv[0],
                 Path.resolve(__dirname, './cmd/up-run.js'),
                 Path.resolve(__dirname, './process-wrapper.js'),
                 ...def.run
@@ -153,7 +146,7 @@ class Runner {
 
         var inst = {
             id: this.instanceCount.get(),
-            unitId,
+            appId,
             taskId,
             proc,
             def,
@@ -217,13 +210,11 @@ class Runner {
             inst => this.whenUp(inst.id))))
     }
 
-    instancesForUnit (unitId) {
-        return L.filter(this.instances.get(),
-            inst => inst.unitId == unitId)
+    instancesForApp (appId) {
+        return L.filter(this.instances.get(), inst => inst.appId == appId)
     }
 
-    liveInstancesForUnit (unitId) {
-        return L.filter(this.instances.get(),
-            inst => inst.unitId == unitId && inst.procState != 'stopped')
+    liveInstancesForApp (appId) {
+        return L.filter(this.instancesForApp(appId), inst => inst.procState != 'stopped')
     }
 }

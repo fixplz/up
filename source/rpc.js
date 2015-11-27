@@ -2,7 +2,7 @@ import K from 'kefir'
 import L from 'lodash'
 
 import Sock from 'fancy-socks'
-import RPCHub from 'stream-rpc'
+import RPC from 'stream-rpc'
 import {whenStream} from 'async-helper/kefir'
 
 
@@ -10,7 +10,7 @@ var sockpath = '/up/hub'
 
 export function host(hubOpts) {
     return Sock.createServer({path: sockpath}).then(server => {
-        var hub = new RPCHub.Hub(server)
+        var hub = new RPC.Hub(server)
         if(hubOpts && hubOpts.log) log(hub)
         return hub
     })
@@ -18,7 +18,7 @@ export function host(hubOpts) {
 
 export function connect(clientOpts) {
     return Sock.openSocket({path: sockpath, reconnect: true}).then(sock => {
-        var client = new RPCHub.Client(sock, clientOpts)
+        var client = new RPC.Client(sock, clientOpts)
         if(clientOpts && clientOpts.log) log(client)
 
         return whenStream(K.merge([
@@ -29,7 +29,7 @@ export function connect(clientOpts) {
 }
 
 export function connectLocally(hub, clientOpts) {
-    return new RPCHub.VirtualClient(hub, clientOpts)
+    return new RPC.VirtualClient(hub, clientOpts)
 }
 
 function log (target) {
