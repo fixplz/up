@@ -10,11 +10,14 @@
     "async-helper": "git+https://github.com/fixplz/async-helper.git",
     "babel": "^5.8.29",
     "bluebird": "^3.0.5",
+    "cli-table2": "^0.1.9",
+    "colors": "^1.1.2",
     "event-stream": "^3.3.1",
     "fancy-socks": "git+https://github.com/fixplz/fancy-socks.git",
     "kefir": "^3.1.0",
     "lodash": "^3.9.3",
     "mini-store": "git+https://git@github.com/fixplz/mini-store.git",
-    "stream-rpc": "git+https://github.com/fixplz/stream-rpc.git"
+    "stream-rpc": "git+https://github.com/fixplz/stream-rpc.git",
+    "yargs": "^3.30.0"
   }
 }
