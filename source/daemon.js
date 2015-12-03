@@ -80,6 +80,7 @@ export class Runner {
         return L.map(this.apps.get(), (app, appId) => {
             return {
                 appId,
+                state: app.state,
                 tasks: app.tasks,
                 instances: this.instancesForApp(appId).map(inst => {
                     var {appId, taskId, proc, procState, marking, def} = inst
@@ -90,7 +91,10 @@ export class Runner {
     }
 
     async updateApp (appId, tasks) {
-        this.apps.at(appId).set({tasks})
+        this.apps.at(appId).set({
+            tasks,
+            state: 'updating',
+        })
 
         var [oldInstances, liveInstances] =
             L.partition(this.liveInstancesForApp(appId), instanceNeedsReload)
@@ -101,15 +105,18 @@ export class Runner {
 
         if(newInstances.length == 0 && oldInstances.length == 0) {
             log('nothing to do')
+            this.apps.at(appId).modify(it => ({...it, state: 'ok'}))
             return respondOk('nothing to update')
         }
 
         if(await this.whenAllUp(newInstances)) {
             await this.stopAll(oldInstances)
+            this.apps.at(appId).modify(it => ({...it, state: 'ok'}))
             return respondOk(`updated instances: ${showInstances(newInstances)}, stopped instances: ${showInstances(oldInstances)}`)
         }
         else {
             await this.stopAll(newInstances)
+            this.apps.at(appId).modify(it => ({...it, state: 'reverted'}))
             return respondFail('failed to launch, reverted')
         }
 
