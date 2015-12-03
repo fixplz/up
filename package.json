@@ -19,5 +19,9 @@
     "mini-store": "git+https://git@github.com/fixplz/mini-store.git",
     "stream-rpc": "git+https://github.com/fixplz/stream-rpc.git",
     "yargs": "^3.30.0"
+  },
+  "devDependencies": {
+    "mocha": "^2.3.4",
+    "should": "^7.1.1"
   }
 }

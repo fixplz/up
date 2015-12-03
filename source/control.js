@@ -21,7 +21,7 @@ export class Controller {
                 this.client.requestTo(this.runner, args, msg => {
                     var [status, response] = msg.response
                     if(status == 'ok') resolve(msg.response[1])
-                    if(status == 'err') reject(inspect(msg.response[1]))
+                    if(status == 'err') reject(msg.response[1])
                     reject(new Error('unrecognized response ' + inspect(msg)))
                 }))
 

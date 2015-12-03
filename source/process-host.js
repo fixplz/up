@@ -4,9 +4,16 @@ import K from 'kefir'
 import {whenStream} from 'async-helper/kefir'
 
 export default class ProcessHost {
-    constructor () {
+    constructor ({log}) {
+        this.log = (...args) => log('[host]', ...args)
         this.processes = []
         this.idCount = 1
+    }
+
+    logProc (prefix, data) {
+        var lines = data.toString().split('\n')
+        if(L.last(lines) == '') lines.pop()
+        this.log(lines.map(l => prefix + l).join('\n'))
     }
 
     run (params) {
@@ -16,8 +23,8 @@ export default class ProcessHost {
 
        var name = `${params.name} (${proc.pid})`
 
-       proc.stdout.on('data', d => logProc(name + ': ', d))
-       proc.stderr.on('data', d => logProc(name + '! ', d))
+       proc.stdout.on('data', d => this.logProc(name + ': ', d))
+       proc.stderr.on('data', d => this.logProc(name + '! ', d))
 
        var exited = whenStream(K.merge([
            K.fromEvents(proc, 'error', error => ({error})),
@@ -42,14 +49,4 @@ export default class ProcessHost {
    stop (desc) {
        desc.handle.kill()
    }
-}
-
-function logHost (...args) {
-    console.log('[host]', ...args)
-}
-
-function logProc (prefix, data) {
-    var lines = data.toString().split('\n')
-    if(L.last(lines) == '') lines.pop()
-    logHost(lines.map(l => prefix + l).join('\n'))
 }

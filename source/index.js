@@ -6,7 +6,7 @@ if(typeof Promise == 'undefined') {
   })
 }
 require("babel/node_modules/babel-core/node_modules/regenerator/runtime")
-require('babel/register-without-polyfill')({stage: 0})
+require('babel/register-without-polyfill')
 // }
 
 // make 'up' globally requireable

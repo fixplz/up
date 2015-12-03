@@ -25,7 +25,7 @@ let withController = async func => {
 
 
 if(argv._[0] == 'start') {
-  require('../daemon').startDaemon()
+  require('../daemon').getDaemon({log: console.log})
 }
 
 else if(argv._[0] == 'status') {

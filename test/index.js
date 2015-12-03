@@ -1,0 +1,2 @@
+require('../source')
+require('./test')

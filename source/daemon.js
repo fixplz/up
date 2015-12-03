@@ -12,16 +12,18 @@ import Tree from 'mini-store/tree'
 import TreeStore from 'mini-store/tree-store'
 
 
-export async function startDaemon () {
+let log = () => {}
+
+export async function getDaemon (opts) {
+    return initRunnerRPC(await RPC.host(), opts)
+}
+
+export function initRunnerRPC (hub, opts = {}) {
+    if(opts.log != null)
+        log = (...args) => opts.log('[up]', ...args)
+
     process.on('uncaughtException', err => log('!!!', err.stack))
-    return initRunnerRPC(await RPC.host())
-}
 
-function log (...args) {
-    console.log('[up]', ...args)
-}
-
-export function initRunnerRPC (hub) {
     hub.on('error', err => log(err.stack || err))
 
     var client = RPC.connectLocally(hub, { name: 'Runner' })
@@ -67,7 +69,7 @@ function respondFail (message) {
 export class Runner {
     constructor (client) {
         this.client = client
-        this.host = new ProcessHost()
+        this.host = new ProcessHost({log})
 
         this.store = new TreeStore(new Store(new Tree({})))
         this.apps = this.store.at('apps')
@@ -78,7 +80,7 @@ export class Runner {
 
     status () {
         return L.map(this.apps.get(), (app, appId) => {
-            return {
+            return app && {
                 appId,
                 state: app.state,
                 tasks: app.tasks,
