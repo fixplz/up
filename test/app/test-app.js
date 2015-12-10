@@ -1,4 +1,5 @@
 import Up from 'up'
+import L from 'lodash'
 
 if(process.argv[2] == 'nop') {
 }

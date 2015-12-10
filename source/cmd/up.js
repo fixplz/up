@@ -3,28 +3,18 @@
 let {argv} =
   require('yargs')
     .help('help')
-    .example('$0 start')
-    .example('$0 status')
+    .command('daemon')
+    .command('status')
+    .command('app')
+    .command('remove')
     .demand(1, 'Specify command')
 
 import Up from 'up'
 import * as P from 'up/util/pretty'
+import withController from 'up/util/with-controller'
 
 
-let withController = async func => {
-  let ctr
-  try {
-    ctr = await Up.control.getController()
-    func(ctr)
-  }
-  finally {
-    if(ctr != null)
-      ctr.close()
-  }
-}
-
-
-if(argv._[0] == 'start') {
+if(argv._[0] == 'daemon') {
   require('../daemon').getDaemon({log: console.log})
 }
 
@@ -40,6 +30,27 @@ else if(argv._[0] == 'status') {
         P.table(it.map(({taskId, procState, pid, run}) =>
           ({taskId, state:procState, pid, run:run.join(' ')}))) },
       {tasks: 50}))
+  })
+}
+
+else if(argv._[0] == 'app') {
+  let [_, name, ...run] = argv._
+  withController(async ctr => {
+    let status = await ctr.updateApp(name, {
+      cmd: {
+        cwd: process.cwd(),
+        run: run,
+        env: { PATH: process.env.PATH },
+      },
+    })
+    console.log(P.inspect(status))
+  })
+}
+
+else if(argv._[0] == 'remove') {
+  withController(async ctr => {
+    let status = await ctr.removeApp(argv._[1])
+    console.log(P.inspect(status))
   })
 }
 

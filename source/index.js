@@ -1,9 +1,6 @@
 // initialization hacks {
 if(typeof Promise == 'undefined') {
   global.Promise = require('bluebird')
-  process.on('unhandledRejection', function (err) {
-    throw err
-  })
 }
 require("babel/node_modules/babel-core/node_modules/regenerator/runtime")
 require('babel/register-without-polyfill')
@@ -11,6 +8,11 @@ require('babel/register-without-polyfill')
 
 // make 'up' globally requireable
 require('app-module-path').addPath(__dirname + '/require');
+
+// ???
+process.on('unhandledRejection', function (err) {
+  throw err
+})
 
 // module exports
 exports.RPC = require('./rpc')

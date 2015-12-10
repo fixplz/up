@@ -1,7 +1,7 @@
 {
   "name": "up",
   "bin": {
-    "up-daemon": "./source/cmd/up-daemon.js",
+    "up": "./source/cmd/up.js",
     "up-run": "./source/cmd/up-run.js"
   },
   "dependencies": {
