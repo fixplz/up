@@ -15,7 +15,21 @@ import withController from 'up/util/with-controller'
 
 
 if(argv._[0] == 'daemon') {
-  require('../daemon').getDaemon({log: console.log})
+  let {Runner, initRunnerRPC} = require('../daemon')
+
+  let log = console.log
+
+  async () => {
+    let hub = await Up.RPC.host()
+    hub.on('error', err => log(err.stack || err))
+
+    log('starting')
+    let client = Up.RPC.connectLocally(hub, { name: 'Runner' })
+    let runner = new Runner(client, Up.FS.persist, log)
+    initRunnerRPC(client, runner, log)
+
+    process.on('uncaughtException', err => log('!!!', err.stack))
+  }()
 }
 
 else if(argv._[0] == 'status') {

@@ -1,7 +1,7 @@
 require('../source')
 
-import RPC from 'stream-rpc'
-import {initRunnerRPC} from '../source/daemon'
+import * as RPC from 'up/rpc'
+import {Runner,initRunnerRPC} from '../source/daemon'
 import {Controller} from '../source/control'
 import K from 'kefir'
 import {whenStream} from 'async-helper/kefir'
@@ -9,6 +9,9 @@ import should from 'should'
 
 let hub
 let controller
+
+let log =
+    process.env.log ? console.log : () => {}
 
 let instDef = (cmd, ...args) => ({
     cwd: __dirname,
@@ -18,15 +21,17 @@ let instDef = (cmd, ...args) => ({
 
 describe('Hub', () => {
     it('initializes', async () => {
-        hub = await require('up/rpc').host()
-        // hub = new RPC.Hub()
-        initRunnerRPC(hub, {log: process.env.log ? console.log : null})
+        hub = await RPC.host()
+
+        let client = RPC.connectLocally(hub, { name: 'Runner' })
+        let runner = new Runner(client, undefined, log)
+        initRunnerRPC(client, runner, log)
     })
 })
 
 describe('Controller', () => {
     it('connects', async () => {
-        let client = new RPC.VirtualClient(hub, {name: 'Test-Controller'})
+        let client = new RPC.connectLocally(hub, {name: 'Test-Controller'})
         await whenStream(K.fromEvents(client, 'peers'))
         controller = new Controller(client)
     })
@@ -63,6 +68,6 @@ describe('Controller', () => {
     it('remove app', async () => {
         await controller.removeApp('test')
         let status = await controller.status()
-        status.should.deepEqual([null])
+        status.should.deepEqual([])
     })
 })

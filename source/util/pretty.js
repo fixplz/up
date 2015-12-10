@@ -9,6 +9,11 @@ export let inspect = obj => util.inspect(obj, {depth: null, colors: true})
 export let title = str => colors.bold('\n# ' + str + '\n')
 
 export let table = (list, subformat = {}, truncate = {}) => {
+  list = L.filter(list)
+
+  if(list.length == 0)
+    return 'empty'
+
   let keys = L.keys(list[L.keys(list)[0]])
 
   let t = new Table({

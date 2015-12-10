@@ -2,8 +2,9 @@ import Path from 'path'
 import L from 'lodash'
 import K from 'kefir'
 
-import * as RPC from './rpc'
-import ProcessHost from './process-host'
+import * as RPC from 'up/rpc'
+import ProcessHost from 'up/process-host'
+import Files from 'up/fs'
 
 import watch from 'mini-store/watch-kefir'
 import {whenStream} from 'async-helper/kefir'
@@ -12,27 +13,13 @@ import Tree from 'mini-store/tree'
 import TreeStore from 'mini-store/tree-store'
 
 
-let log = () => {}
-
-export async function getDaemon (opts) {
-    return initRunnerRPC(await RPC.host(), opts)
-}
-
-export function initRunnerRPC (hub, opts = {}) {
-    if(opts.log != null)
-        log = (...args) => opts.log('[up]', ...args)
-
-    process.on('uncaughtException', err => log('!!!', err.stack))
-
-    hub.on('error', err => log(err.stack || err))
-
-    var client = RPC.connectLocally(hub, { name: 'Runner' })
-    var runner = new Runner(client)
+export function initRunnerRPC (client, runner, _log = () => {}) {
+    let log = (...args) => _log('[rpc]', ...args)
 
     var calls = {
-        'status':    () => runner.status(),
-        'updateApp': (appId, tasks) => runner.updateApp(appId, tasks),
-        'removeApp': (appId) => runner.removeApp(appId),
+        status:    ::runner.status,
+        updateApp: ::runner.updateApp,
+        removeApp: ::runner.removeApp,
     }
 
     client.on('request', ({from, request, respond}) => {
@@ -55,6 +42,8 @@ export function initRunnerRPC (hub, opts = {}) {
     })
 
     log('ready')
+
+    return client
 }
 
 
@@ -67,15 +56,25 @@ function respondFail (message) {
 }
 
 export class Runner {
-    constructor (client) {
+    constructor (client, persist = {get(){}, put(){}}, log = () => {}) {
+        this.log = (...args) => log('[up]', ...args)
         this.client = client
         this.host = new ProcessHost({log})
 
-        this.store = new TreeStore(new Store(new Tree({})))
+        var init = new Tree({apps:
+            new Tree(L.mapValues(persist.get(), it => new Tree({tasks: it.tasks})))})
+
+        this.store = new TreeStore(new Store(init))
+
         this.apps = this.store.at('apps')
         this.instances = this.store.at('instances')
         this.instanceCount = this.store.at('instanceCount')
         this.instanceCount.set(1)
+
+        watch(this.apps).onValue(state => state && persist.put(state))
+
+        L.each(this.apps.get(), (app, appId) =>
+            this.deployApp(appId))
     }
 
     status () {
@@ -93,37 +92,14 @@ export class Runner {
     }
 
     async updateApp (appId, tasks) {
-        this.apps.at(appId).set({
-            tasks,
-            state: 'updating',
-        })
+        this.apps.at(appId).set({tasks})
+        let status = await this.deployApp(appId)
 
-        var [oldInstances, liveInstances] =
-            L.partition(this.liveInstancesForApp(appId), instanceNeedsReload)
-
-        var newInstances =
-            L.reject(L.keys(tasks), taskId => L.find(liveInstances, {taskId}))
-                .map(taskId => this.startInstance(appId, taskId))
-
-        if(newInstances.length == 0 && oldInstances.length == 0) {
-            log('nothing to do')
-            this.apps.at(appId).modify(it => ({...it, state: 'ok'}))
-            return respondOk('nothing to update')
-        }
-
-        if(await this.whenAllUp(newInstances)) {
-            await this.stopAll(oldInstances)
-            this.apps.at(appId).modify(it => ({...it, state: 'ok'}))
-            return respondOk(`updated instances: ${showInstances(newInstances)}, stopped instances: ${showInstances(oldInstances)}`)
-        }
-        else {
-            await this.stopAll(newInstances)
-            this.apps.at(appId).modify(it => ({...it, state: 'reverted'}))
-            return respondFail('failed to launch, reverted')
-        }
-
-        function instanceNeedsReload (inst) {
-            return JSON.stringify(inst.def) != JSON.stringify(tasks[inst.taskId])
+        if(status == null)
+            return respondFail(`failed to launch, reverted`)
+        else  {
+            let [started, stopped] = status
+            return respondOk(`updated instances: ${showInstances(started)}, stopped instances: ${showInstances(stopped)}`)
         }
 
         function showInstances (list) {
@@ -132,9 +108,34 @@ export class Runner {
     }
 
     async removeApp (appId) {
-        this.apps.at(appId).set(null)
+        this.apps.at(appId).remove()
         await this.stopAll(this.liveInstancesForApp(appId))
         return respondOk('removed app')
+    }
+
+    async deployApp (appId) {
+        var tasks = this.apps.at(appId).get().tasks
+
+        this.apps.at(appId).modify(it => ({ ...it, state: 'updating' }))
+
+        var [oldInstances, liveInstances] =
+            L.partition(this.liveInstancesForApp(appId),
+                inst => JSON.stringify(inst.def) != JSON.stringify(tasks[inst.taskId]))
+
+        var newInstances =
+            L.reject(L.keys(tasks), taskId => L.find(liveInstances, {taskId}))
+                .map(taskId => this.startInstance(appId, taskId))
+
+        if(await this.whenAllUp(newInstances)) {
+            await this.stopAll(oldInstances)
+            this.apps.at(appId).modify(it => ({...it, state: 'ok'}))
+            return [newInstances, oldInstances]
+        }
+        else {
+            await this.stopAll(newInstances)
+            this.apps.at(appId).modify(it => ({...it, state: 'reverted'}))
+            return null
+        }
     }
 
     startInstance (appId, taskId) {
@@ -151,7 +152,7 @@ export class Runner {
             cwd: def.cwd
         })
 
-        log('start', proc.name)
+        this.log('start', proc.name)
 
         var inst = {
             id: this.instanceCount.get(),
@@ -183,7 +184,7 @@ export class Runner {
             await whenStream(
                 watch(this.instances.at(instId)),
                 inst => inst.marking == 'stop')
-            log('stop', proc.name)
+            this.log('stop', proc.name)
             this.host.stop(proc)
         }()
 

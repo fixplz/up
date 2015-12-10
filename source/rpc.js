@@ -5,34 +5,31 @@ import Sock from 'fancy-socks'
 import RPC from 'stream-rpc'
 import {whenStream} from 'async-helper/kefir'
 
+import Files from 'up/fs'
 
-var sockpath = '/up/hub'
 
-export function host(hubOpts) {
-    return Sock.createServer({path: sockpath}).then(server => {
-        var hub = new RPC.Hub(server)
-        if(hubOpts && hubOpts.log) log(hub)
-        return hub
-    })
+export async function host(opts = {}) {
+    let server = await Sock.createServer({path: Files.hubFile})
+    var hub = new RPC.Hub(server)
+    if(opts && opts.log) logging(hub)
+    return hub
 }
 
-export function connect(clientOpts) {
-    return Sock.openSocket({path: sockpath, reconnect: true}).then(sock => {
-        var client = new RPC.Client(sock, clientOpts)
-        if(clientOpts && clientOpts.log) log(client)
-
-        return whenStream(K.merge([
-            K.fromEvents(client, 'peers').map(() => client),
-            K.fromEvents(client, 'error').flatMap(err => K.constantError(err)),
-        ]))
-    })
+export async function connect(opts = {}) {
+    let sock = await Sock.openSocket({path: Files.hubFile, reconnect: true})
+    var client = new RPC.Client(sock, opts)
+    if(opts && opts.log) logging(client)
+    return whenStream(K.merge([
+        K.fromEvents(client, 'peers').map(() => client),
+        K.fromEvents(client, 'error').flatMap(err => K.constantError(err)),
+    ]))
 }
 
-export function connectLocally(hub, clientOpts) {
-    return new RPC.VirtualClient(hub, clientOpts)
+export function connectLocally(hub, opts) {
+    return new RPC.VirtualClient(hub, opts)
 }
 
-function log (target) {
+function logging (target) {
     target.on('log', log => console.log.apply(null, ['[%s]', target.name].concat(log)) )
     target.on('error', err => console.log.apply(null, ['[%s] !!!', target.name, err.stack]) )
 }
