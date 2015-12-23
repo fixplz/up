@@ -1,8 +1,5 @@
-require('../source')
-
-import * as RPC from 'up/rpc'
-import {Runner} from '../source/daemon'
-import {getController} from '../source/control'
+import Up from 'up'
+import {Runner} from 'up/runner'
 import K from 'kefir'
 import {whenStream} from 'async-helper/kefir'
 import should from 'should'
@@ -22,16 +19,16 @@ let instDef = (cmd, ...args) => ({
 
 describe('Hub', () => {
     it('initializes', async () => {
-        hub = await RPC.host()
-        let client = await RPC.connectLocally(hub, { name: 'Runner' })
+        hub = await Up.RPC.host()
+        let client = await Up.RPC.connectLocally(hub, { name: 'Runner' })
         runner = new Runner(client, undefined, log)
     })
 })
 
 describe('Controller', () => {
     it('connects', async () => {
-        let client = await RPC.connectLocally(hub, {name: 'Test-Controller'})
-        controller = await getController({client})
+        let client = await Up.RPC.connectLocally(hub, {name: 'Test-Controller'})
+        controller = await Up.getController({client})
     })
 
     it('update app', async () => {

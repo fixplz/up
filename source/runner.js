@@ -2,7 +2,7 @@ import Path from 'path'
 import L from 'lodash'
 import K from 'kefir'
 
-import {wrapRunner} from 'up/control'
+import {wrapRunner} from 'up/runner-rpc'
 import ProcessHost from 'up/process-host'
 import Files from 'up/fs'
 

@@ -16,7 +16,7 @@ import withController from 'up/util/with-controller'
 
 let Commands = {
 daemon() {
-  let {Runner} = require('../daemon')
+  let {Runner} = require('up/runner')
 
   let log = console.log
 

@@ -17,5 +17,5 @@ process.on('unhandledRejection', function (err) {
 // module exports
 exports.FS = require('./fs')
 exports.RPC = require('./rpc')
-exports.control = require('./control')
+exports.getController = require('./runner-rpc').getController
 
