@@ -3,16 +3,24 @@ import L from 'lodash'
 import Table from 'cli-table2'
 import colors from 'colors'
 
+export let log = console.log
 
-export let inspect = obj => util.inspect(obj, {depth: null, colors: true})
+export let status = (status) => {
+  log(status.message)
+  log(status.success ? colors.green('ok') : colors.red('not ok'))
+}
 
-export let title = str => colors.bold('\n# ' + str + '\n')
+export let title = str => {
+  log(colors.bold(`\n# ${str}\n`))
+}
 
-export let table = (list, subformat = {}, truncate = {}) => {
+let inspect = obj => util.inspect(obj, {depth: null, colors: true})
+
+export let formatTable = (list, subformat = {}, truncate = {}) => {
   list = L.filter(list)
 
   if(list.length == 0)
-    return 'empty'
+    return '(empty)'
 
   let keys = L.keys(list[L.keys(list)[0]])
 

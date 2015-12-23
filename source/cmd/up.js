@@ -10,11 +10,12 @@ let {argv} =
     .demand(1, 'Specify command')
 
 import Up from 'up'
-import * as P from 'up/util/pretty'
+import * as R from 'up/util/report'
 import withController from 'up/util/with-controller'
 
 
-if(argv._[0] == 'daemon') {
+let Commands = {
+daemon() {
   let {Runner, initRunnerRPC} = require('../daemon')
 
   let log = console.log
@@ -30,45 +31,55 @@ if(argv._[0] == 'daemon') {
 
     process.on('uncaughtException', err => log('!!!', err.stack))
   }()
-}
-
-else if(argv._[0] == 'status') {
+},
+status() {
   withController(async ctr => {
-    console.log(P.title('peers'))
-    console.log(P.table(ctr.client.peers, {}, {attributes: 50}))
+    R.title('peers')
+    R.log(peerTable(ctr.client.peers))
 
-    console.log(P.title('apps'))
-    console.log(P.table(
-      await ctr.status(),
-      {instances: it =>
-        P.table(it.map(({taskId, procState, pid, run}) =>
-          ({taskId, state:procState, pid, run:run.join(' ')}))) },
-      {tasks: 50}))
+    R.title('apps')
+    R.log(instanceTable(await ctr.status()))
   })
-}
 
-else if(argv._[0] == 'app') {
-  let [_, name, ...run] = argv._
+  function peerTable (peers) {
+    return R.formatTable(peers, {}, {attributes: 50})
+  }
+
+  function instanceTable (instances) {
+    return R.formatTable(
+      instances,
+      {instances: it =>
+        R.formatTable(it.map(({taskId, procState, pid, run}) =>
+          ({taskId, state: procState, pid, run: run.join(' ')}))) },
+      {tasks: 50}
+    )
+  }
+},
+app(app, ...command) {
   withController(async ctr => {
-    let status = await ctr.updateApp(name, {
+    let config = {
       cmd: {
         cwd: process.cwd(),
-        run: run,
+        run: command,
         env: { PATH: process.env.PATH },
       },
-    })
-    console.log(P.inspect(status))
+    }
+    R.title(`update ${app}`)
+    R.status(await ctr.updateApp(app, config))
   })
-}
-
-else if(argv._[0] == 'remove') {
+},
+remove(app) {
   withController(async ctr => {
-    let status = await ctr.removeApp(argv._[1])
-    console.log(P.inspect(status))
+    R.title(`remove ${app}`)
+    R.status(await ctr.removeApp(app))
   })
+},
 }
 
-else {
+if(Commands[argv._[0]] == null) {
   console.error('unknown command:', argv._[0])
   process.exit(1)
+}
+else {
+  Commands[argv._[0]](...argv._.slice(1))
 }
