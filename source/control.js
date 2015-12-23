@@ -1,33 +1,56 @@
-import _ from 'lodash'
-import * as  RPC from './rpc'
-import {inspect} from 'util'
+import L from 'lodash'
+import * as RPC from 'up/rpc'
 
+let runnerMethods = ['status', 'updateApp', 'removeApp']
 
-export async function getController (opts = {}) {
-    return new Controller(await RPC.connect({name: opts.name || 'Controller', log: opts.log}))
+export async function getController ({client, name, log} = {}) {
+    if(client == null)
+        client = await RPC.connect({name: name || 'Controller', log})
+
+    let runner = L.find(client.peers, { name: 'Runner' })
+
+    if(runner == null)
+        throw new Error('runner not found')
+
+    let request = (...args) =>
+        RPC.request(client, runner, ...args)
+
+    let methods = L.object(runnerMethods,
+        L.map(runnerMethods, k => L.partial(request, k)))
+
+    return {
+        client,
+        runner,
+        request,
+        ...methods,
+        close: () => client.close(),
+    }
 }
 
-export class Controller {
-    constructor (client) {
-        this.client = client
+export function wrapRunner (runner, _log = () => {}) {
+    let log = (...args) => _log('[rpc]', ...args)
 
-        this.runner = _.find(this.client.peers, { name: 'Runner' })
+    let methods = L.object(runnerMethods,
+        L.map(runnerMethods, k => ::runner[k]))
 
-        if(this.runner == null)
-            throw new Error('runner not found')
+    runner.client.on('request', ({from, request, respond}) => {
+        var [func, ...params] = request
 
-        let request = (...args) =>
-            new Promise((resolve, reject) =>
-                this.client.requestTo(this.runner, args, msg => {
-                    var [status, response] = msg.response
-                    if(status == 'ok') resolve(msg.response[1])
-                    if(status == 'err') reject(new Error(JSON.stringify(msg.response[1])))
-                    reject(new Error('unrecognized response ' + inspect(msg)))
-                }))
+        log('request', func, params, 'from', from.name, from.id)
 
-        this.status     = () =>            request('status')
-        this.updateApp  = (appId, def) =>  request('updateApp', appId, def)
-        this.removeApp  = (appId) =>       request('removeApp', appId)
-        this.close      = () => this.client.close()
-    }
+        async () => {
+            try {
+                let result = await methods[func](...params)
+                respond(['ok', result])
+                log(func, 'ok')
+            }
+            catch(err) {
+                respond(['err', {error: 'failed'}])
+                log('!!!', func, 'error')
+                log(err.stack)
+            }
+        }()
+    })
+
+    log('ready')
 }

@@ -2,7 +2,7 @@ import Path from 'path'
 import L from 'lodash'
 import K from 'kefir'
 
-import * as RPC from 'up/rpc'
+import {wrapRunner} from 'up/control'
 import ProcessHost from 'up/process-host'
 import Files from 'up/fs'
 
@@ -11,40 +11,6 @@ import {whenStream} from 'async-helper/kefir'
 import Store from 'mini-store/store'
 import Tree from 'mini-store/tree'
 import TreeStore from 'mini-store/tree-store'
-
-
-export function initRunnerRPC (client, runner, _log = () => {}) {
-    let log = (...args) => _log('[rpc]', ...args)
-
-    var calls = {
-        status:    ::runner.status,
-        updateApp: ::runner.updateApp,
-        removeApp: ::runner.removeApp,
-    }
-
-    client.on('request', ({from, request, respond}) => {
-        var [func, ...params] = request
-
-        log('request', func, params, 'from', from.name, from.id)
-
-        async () => {
-            try {
-                let result = await calls[func](...params)
-                respond(['ok', result])
-                log(func, 'ok')
-            }
-            catch(err) {
-                respond(['err', {error: 'failed'}])
-                log('!!!', func, 'error')
-                log(err.stack)
-            }
-        }()
-    })
-
-    log('ready')
-
-    return client
-}
 
 
 function respondOk (message) {
@@ -75,6 +41,8 @@ export class Runner {
 
         L.each(this.apps.get(), (app, appId) =>
             this.deployApp(appId))
+
+        wrapRunner(this, log)
     }
 
     status () {
