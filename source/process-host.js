@@ -11,9 +11,10 @@ export default class ProcessHost {
     }
 
     logProc (prefix, data) {
-        var lines = data.toString().split('\n')
-        if(L.last(lines) == '') lines.pop()
-        this.log(lines.map(l => prefix + l).join('\n'))
+        data.toString().split('\n').forEach(line => {
+          if(L.trim(line) != '')
+            this.log(prefix + line)
+        })
     }
 
     run (params) {
