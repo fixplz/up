@@ -9,55 +9,55 @@ import Files from 'up/fs'
 
 
 export async function host(opts = {}) {
-    let server = await Sock.createServer({path: Files.hubFile})
-    var hub = new RPC.Hub(server)
-    if(opts && opts.log) logging(hub, opts.log)
-    return hub
+  let server = await Sock.createServer({path: Files.hubFile})
+  var hub = new RPC.Hub(server)
+  if(opts && opts.log) logging(hub, opts.log)
+  return hub
 }
 
 export async function connect(opts = {}) {
-    let sock = await Sock.openSocket({path: Files.hubFile, reconnect: true})
-    var client = new RPC.Client(sock, opts)
-    if(opts && opts.log) logging(client, opts.log)
-    await whenPeers(client)
-    return client
+  let sock = await Sock.openSocket({path: Files.hubFile, reconnect: true})
+  var client = new RPC.Client(sock, opts)
+  if(opts && opts.log) logging(client, opts.log)
+  await whenPeers(client)
+  return client
 }
 
 export async function connectLocally(hub, opts) {
-    let client = new RPC.VirtualClient(hub, opts)
-    if(opts && opts.log) logging(client, opts.log)
-    await whenPeers(client)
-    return client
+  let client = new RPC.VirtualClient(hub, opts)
+  if(opts && opts.log) logging(client, opts.log)
+  await whenPeers(client)
+  return client
 }
 
 function whenPeers (client) {
-    return whenStream(K.merge([
-        K.fromEvents(client, 'peers').map(() => client),
-        K.fromEvents(client, 'error').flatMap(err => K.constantError(err)),
-    ]))
+  return whenStream(K.merge([
+    K.fromEvents(client, 'peers').map(() => client),
+    K.fromEvents(client, 'error').flatMap(err => K.constantError(err)),
+  ]))
 }
 
 function logging (target, log) {
-    target.on('log', msg => log('[%s]', target.name, ...msg))
-    target.on('error', err => log('[%s] !!!', target.name, err.stack || err))
+  target.on('log', msg => log('[%s]', target.name, ...msg))
+  target.on('error', err => log('[%s] !!!', target.name, err.stack || err))
 }
 
 export function request(client, peer, ...args) {
-    return new Promise((resolve, reject) =>
-        client.requestTo(peer, args, msg => {
-            var [status, response] = msg.response
-            if(status == 'ok') resolve(msg.response[1])
-            if(status == 'err') reject(new Error(JSON.stringify(msg.response[1])))
-            reject(new Error('unrecognized response ' + require('util').inspect(msg)))
-        }))
+  return new Promise((resolve, reject) =>
+    client.requestTo(peer, args, msg => {
+      var [status, response] = msg.response
+      if(status == 'ok') resolve(msg.response[1])
+      if(status == 'err') reject(new Error(JSON.stringify(msg.response[1])))
+      reject(new Error('unrecognized response ' + require('util').inspect(msg)))
+    }))
 }
 
 export function watchPeer(client, pred) {
-    return K.fromEvents(client, 'peers').toProperty()
-        .map(() => L.find(client.peers, pred))
-        .skipDuplicates()
+  return K.fromEvents(client, 'peers').toProperty()
+    .map(() => L.find(client.peers, pred))
+    .skipDuplicates()
 }
 
 export function whenPeer(client, pred) {
-    return whenStream(watchPeer(client, pred), peer => peer != null)
+  return whenStream(watchPeer(client, pred), peer => peer != null)
 }

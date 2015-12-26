@@ -4,53 +4,53 @@ import * as RPC from 'up/rpc'
 let runnerMethods = ['status', 'updateApp', 'removeApp']
 
 export async function getController ({client, name, log} = {}) {
-    if(client == null)
-        client = await RPC.connect({name: name || 'Controller', log})
+  if(client == null)
+    client = await RPC.connect({name: name || 'Controller', log})
 
-    let runner = L.find(client.peers, { name: 'Runner' })
+  let runner = L.find(client.peers, { name: 'Runner' })
 
-    if(runner == null)
-        throw new Error('runner not found')
+  if(runner == null)
+    throw new Error('runner not found')
 
-    let request = (...args) =>
-        RPC.request(client, runner, ...args)
+  let request = (...args) =>
+    RPC.request(client, runner, ...args)
 
-    let methods = L.object(runnerMethods,
-        L.map(runnerMethods, k => L.partial(request, k)))
+  let methods = L.object(runnerMethods,
+    L.map(runnerMethods, k => L.partial(request, k)))
 
-    return {
-        client,
-        runner,
-        request,
-        ...methods,
-        close: () => client.close(),
-    }
+  return {
+    client,
+    runner,
+    request,
+    ...methods,
+    close: () => client.close(),
+  }
 }
 
 export function wrapRunner (runner, _log = () => {}) {
-    let log = (...args) => _log('[rpc]', ...args)
+  let log = (...args) => _log('[rpc]', ...args)
 
-    let methods = L.object(runnerMethods,
-        L.map(runnerMethods, k => ::runner[k]))
+  let methods = L.object(runnerMethods,
+    L.map(runnerMethods, k => ::runner[k]))
 
-    runner.client.on('request', ({from, request, respond}) => {
-        var [func, ...params] = request
+  runner.client.on('request', ({from, request, respond}) => {
+    var [func, ...params] = request
 
-        log('request', func, params, 'from', from.name, from.id)
+    log('request', func, params, 'from', from.name, from.id)
 
-        async () => {
-            try {
-                let result = await methods[func](...params)
-                respond(['ok', result])
-                log(func, 'ok')
-            }
-            catch(err) {
-                respond(['err', {error: 'failed'}])
-                log('!!!', func, 'error')
-                log(err.stack)
-            }
-        }()
-    })
+    async () => {
+      try {
+        let result = await methods[func](...params)
+        respond(['ok', result])
+        log(func, 'ok')
+      }
+      catch(err) {
+        respond(['err', {error: 'failed'}])
+        log('!!!', func, 'error')
+        log(err.stack)
+      }
+    }()
+  })
 
-    log('ready')
+  log('ready')
 }
