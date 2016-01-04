@@ -22,14 +22,14 @@ export default class ProcessHost {
       params.run[0], params.run.slice(1),
       { env: params.env || {}, cwd: params.cwd })
 
-    var name = `${params.name} (${proc.pid})`
+    var name = `${params.name} (${proc.pid || '-'})`
 
     proc.stdout.on('data', d => this.logProc(name + ': ', d))
     proc.stderr.on('data', d => this.logProc(name + '! ', d))
 
     var exited = whenStream(K.merge([
       K.fromEvents(proc, 'error', error => ({error})),
-      K.fromEvents(proc, 'exit', exited => ({exited}))
+      K.fromEvents(proc, 'exit', (code, signal) => ({code, signal}))
     ]))
 
     var desc = {
@@ -39,7 +39,7 @@ export default class ProcessHost {
       name,
       params,
       exited,
-      inspect: function () { return '<process ' + proc.pid + '>' },
+      inspect: function () { return `<process ${name}>` },
     }
 
     this.processes.push(desc)

@@ -67,11 +67,10 @@ export class Runner {
       return respondFail(`failed to launch, reverted`)
     else  {
       let [started, stopped] = status
-      return respondOk(`updated instances: ${showInstances(started)}, stopped instances: ${showInstances(stopped)}`)
-    }
-
-    function showInstances (list) {
-      return JSON.stringify(L.map(list, inst => inst.proc.name))
+      return respondOk(
+        [ ...L.map(started, inst => `started ${inst.proc.name}`),
+          ...L.map(stopped, inst => `stopped ${inst.proc.name}`)].join('\n')
+        || 'nothing to do')
     }
   }
 
@@ -157,7 +156,8 @@ export class Runner {
     }()
 
     async () => {
-      await proc.exited
+      let exited = await proc.exited
+      this.log('exited', proc.name, exited)
       this.instances.at(instId).modify(it => ({...it, procState: 'stopped'}))
     }()
   }
