@@ -12,15 +12,16 @@ let {argv} =
 import Up from 'up'
 import * as R from 'up/util/report'
 import withController from 'up/util/with-controller'
+import go from 'up/util/go'
 
 let Commands = {
 daemon() {
   let {Runner} = require('up/runner')
 
   let log = R.log
-  let logErr = (err) => log('!!!', err || err.stack)
+  let logErr = (err) => log('!!!', err.stack || err)
 
-  async () => {
+  go(async () => {
     let hub = await Up.RPC.host()
 
     log('starting')
@@ -29,7 +30,7 @@ daemon() {
 
     hub.on('error', logErr)
     process.on('uncaughtException', logErr)
-  }()
+  })
 },
 status() {
   withController(async ctr => {

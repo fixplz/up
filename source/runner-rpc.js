@@ -1,5 +1,6 @@
 import L from 'lodash'
 import * as RPC from 'up/rpc'
+import go from 'up/util/go'
 
 let runnerMethods = ['status', 'updateApp', 'removeApp']
 
@@ -38,7 +39,7 @@ export function wrapRunner (runner, _log = () => {}) {
 
     log('request', func, params, 'from', from.name, from.id)
 
-    async () => {
+    go(async () => {
       try {
         let result = await methods[func](...params)
         respond(['ok', result])
@@ -49,7 +50,7 @@ export function wrapRunner (runner, _log = () => {}) {
         log('!!!', func, 'error')
         log(err.stack)
       }
-    }()
+    })
   })
 
   log('ready')

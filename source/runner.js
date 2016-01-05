@@ -4,7 +4,7 @@ import K from 'kefir'
 
 import {wrapRunner} from 'up/runner-rpc'
 import ProcessHost from 'up/process-host'
-import Files from 'up/fs'
+import go from 'up/util/go'
 
 import watch from 'mini-store/watch-kefir'
 import {whenStream} from 'async-helper/kefir'
@@ -140,26 +140,26 @@ export class Runner {
   }
 
   trackInstance (instId, proc) {
-    async () => {
+    go(async () => {
       await whenStream(K.fromEvents(this.client, 'cast:up'),
         ev => ev.from.attributes.origin.pid == this.instances.at(instId).get().proc.pid)
 
       this.instances.at(instId).modify(it => ({...it, procState: 'up'}))
-    }()
+    })
 
-    async () => {
+    go(async () => {
       await whenStream(
         watch(this.instances.at(instId)),
         inst => inst.marking == 'stop')
       this.log('stop', proc.name)
       this.host.stop(proc)
-    }()
+    })
 
-    async () => {
+    go(async () => {
       let exited = await proc.exited
       this.log('exited', proc.name, exited)
       this.instances.at(instId).modify(it => ({...it, procState: 'stopped'}))
-    }()
+    })
   }
 
   async stopInstance (instId) {
