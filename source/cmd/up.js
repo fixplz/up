@@ -13,22 +13,22 @@ import Up from 'up'
 import * as R from 'up/util/report'
 import withController from 'up/util/with-controller'
 
-
 let Commands = {
 daemon() {
   let {Runner} = require('up/runner')
 
-  let log = console.log
+  let log = R.log
+  let logErr = (err) => log('!!!', err || err.stack)
 
   async () => {
     let hub = await Up.RPC.host()
-    hub.on('error', err => log(err.stack || err))
 
     log('starting')
     let client = await Up.RPC.connectLocally(hub, { name: 'Runner' })
     let runner = new Runner(client, Up.FS.persist, log)
 
-    process.on('uncaughtException', err => log('!!!', err.stack))
+    hub.on('error', logErr)
+    process.on('uncaughtException', logErr)
   }()
 },
 status() {

@@ -3,7 +3,19 @@ import L from 'lodash'
 import Table from 'cli-table2'
 import colors from 'colors'
 
-export let log = console.log
+let inspect = obj => util.inspect(obj, {depth: null, colors: true})
+
+export let log = (...args) => {
+  let prefix = L.takeWhile(args, frag => /^\[\w+\]$/.test(frag))
+
+  let rest = args.slice(prefix.length)
+  if(/^[!@#%]+$/.test(rest[0]))
+    rest = L.map(rest, x => typeof x == 'string' ? colors.yellow(x) : x)
+
+  console.log(
+    ...L.map(prefix, x => colors.blue(x)),
+    ...rest)
+}
 
 export let status = (status) => {
   log(status.message)
@@ -14,7 +26,8 @@ export let title = str => {
   log(colors.bold(`\n# ${str}\n`))
 }
 
-let inspect = obj => util.inspect(obj, {depth: null, colors: true})
+export let table = (...args) =>
+  log(formatTable(...args))
 
 export let formatTable = (list, subformat = {}, truncate = {}) => {
   list = L.filter(list)

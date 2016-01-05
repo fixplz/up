@@ -2,6 +2,7 @@ import Process from 'child_process'
 import L from 'lodash'
 import K from 'kefir'
 import {whenStream} from 'async-helper/kefir'
+import colors from 'colors'
 
 export default class ProcessHost {
   constructor ({log}) {
@@ -13,7 +14,7 @@ export default class ProcessHost {
   logProc (prefix, data) {
     data.toString().split('\n').forEach(line => {
       if(L.trim(line) != '')
-        this.log(prefix + line)
+        this.log(colors.gray(prefix) + line)
     })
   }
 
