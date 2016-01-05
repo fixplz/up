@@ -3,7 +3,7 @@ if(typeof Promise == 'undefined') {
   global.Promise = require('bluebird')
   Promise.longStackTraces()
 }
-require("babel/node_modules/babel-core/node_modules/regenerator/runtime")
+require("regenerator/runtime")
 require('babel/register-without-polyfill')
 // }
 

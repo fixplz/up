@@ -5,18 +5,17 @@
     "up-run": "./source/cmd/up-run.js"
   },
   "dependencies": {
-    "amp": "^0.3.1",
     "app-module-path": "^1.0.4",
     "async-helper": "git+https://github.com/fixplz/async-helper.git",
     "babel": "^5.8.29",
     "bluebird": "^3.0.5",
     "cli-table2": "^0.1.9",
     "colors": "^1.1.2",
-    "event-stream": "^3.3.1",
     "fancy-socks": "git+https://github.com/fixplz/fancy-socks.git",
     "kefir": "^3.1.0",
     "lodash": "^3.9.3",
     "mini-store": "git+https://git@github.com/fixplz/mini-store.git",
+    "regenerator": "^0.8.40",
     "stream-rpc": "git+https://github.com/fixplz/stream-rpc.git",
     "yargs": "^3.30.0"
   },
