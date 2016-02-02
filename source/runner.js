@@ -159,6 +159,14 @@ export class Runner {
       this.log('exited', proc.name, exited)
       this.instances.at(instId).modify(it => ({...it, procState: 'stopped'}))
     })
+
+    go(async () => {
+      await whenStream(watch(this.instances.at(instId)),
+        inst => inst.procState == 'stopped' && inst.marking == 'run')
+      this.instances.at(instId).modify(it => ({...it, marking: 'invalid'}))
+      let inst = this.instances.at(instId).get()
+      this.startInstance(inst.appId, inst.taskId)
+    })
   }
 
   async stopInstance (instId) {
