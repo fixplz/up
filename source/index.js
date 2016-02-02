@@ -1,23 +1,7 @@
-// initialization hacks {
-if(typeof Promise == 'undefined') {
-  global.Promise = require('bluebird')
-  Promise.longStackTraces()
-}
-require("regenerator/runtime")
-require('babel/register-without-polyfill')
-// }
+import FS from './fs'
+import * as RPC from './rpc'
+import {getController} from './runner-rpc'
+import withController from './util/with-controller'
+import * as report from './util/report'
 
-// make 'up' globally requireable
-require('app-module-path').addPath(__dirname + '/require');
-
-// ???
-process.on('unhandledRejection', function (err) {
-  throw err
-})
-
-// module exports
-exports.FS = require('./fs')
-exports.RPC = require('./rpc')
-exports.getController = require('./runner-rpc').getController
-exports.withController = require('./util/with-controller')
-exports.report = require('./util/report')
+export default {RPC, getController, withController, report, FS}

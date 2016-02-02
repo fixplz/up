@@ -111,8 +111,7 @@ export class Runner {
     var proc = this.host.run({
       name: appId + '#' + taskId,
       run: [
-        Path.resolve(__dirname, './cmd/up-run.js'),
-        Path.resolve(__dirname, './process-wrapper.js'),
+        Path.resolve(__dirname, './cmd/up-proc.js'),
         ...def.run
       ],
       env: def.env,

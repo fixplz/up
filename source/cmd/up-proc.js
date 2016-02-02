@@ -1,3 +1,5 @@
+#!/usr/bin/env up-run
+
 import Up from 'up'
 import Path from 'path'
 import go from 'up/util/go'
@@ -6,7 +8,7 @@ process.argv.splice(1, 1)
 
 go(async () => {
   var client = await Up.RPC.connect({
-    name: 'Up-Node',
+    name: 'Process',
     attributes: { run: process.argv.slice() },
   })
 
